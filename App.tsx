@@ -207,7 +207,7 @@ const App: React.FC = () => {
     const meetingTitle = meetingData.title || 'Untitled meeting';
     const meetingType = meetingData.type || 'Standard meeting';
     const transcriptionText = meetingData.transcription.length > 0
-      ? meetingData.transcription.join('\n\n')
+      ? meetingData.transcription.join('')
       : 'No transcription was captured during this session.';
     const durationMins = Math.floor(recordingTime / 60);
     const durationSecs = recordingTime % 60;
@@ -509,7 +509,7 @@ ${transcriptionText}
                       Waiting for speech...
                     </div>
                   ) : (
-                    <p className="text-primary/80 whitespace-pre-wrap">{meetingData.transcription.join(' ')}</p>
+                    <p className="text-primary/80 whitespace-pre-wrap">{meetingData.transcription.join('')}</p>
                   )}
                 </div>
               </div>
