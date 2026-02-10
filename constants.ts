@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, History, Settings } from 'lucide-react';
+
 import { Attendee } from './types';
 
 export const DEPARTMENTS = [
@@ -7,13 +7,6 @@ export const DEPARTMENTS = [
   "Administrators",
   "Business Support",
   "Researchers and IP"
-];
-
-export const MEETING_TYPES = [
-  { id: 'strategy', label: 'Strategy', icon: LayoutDashboard, description: 'High-level planning and roadmap sessions.' },
-  { id: 'workshop', label: 'Workshop', icon: Users, description: 'Collaborative ideation and problem-solving.' },
-  { id: 'review', label: 'Review', icon: History, description: 'Project milestones and feedback sessions.' },
-  { id: 'admin', label: 'Admin', icon: Settings, description: 'Internal team syncs and logistics.' },
 ];
 
 export const ALL_ATTENDEES: Attendee[] = [
