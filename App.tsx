@@ -503,15 +503,13 @@ ${transcriptionText}
 
               <div className="space-y-4">
                 <h3 className="text-xs font-semibold uppercase tracking-widest text-gray-400">Live transcription</h3>
-                <div className="bg-gray-50/50 rounded-3xl p-8 h-[350px] overflow-y-auto space-y-6 font-light text-xl leading-relaxed scroll-smooth border border-gray-100">
+                <div className="bg-gray-50/50 rounded-3xl p-8 h-[350px] overflow-y-auto font-light text-xl leading-relaxed scroll-smooth border border-gray-100">
                   {meetingData.transcription.length === 0 ? (
                     <div className="h-full flex items-center justify-center text-gray-300 italic">
                       Waiting for speech...
                     </div>
                   ) : (
-                    meetingData.transcription.map((line, idx) => (
-                      <p key={idx} className="animate-in fade-in slide-in-from-left-2 duration-300 text-primary/80">{line}</p>
-                    ))
+                    <p className="text-primary/80 whitespace-pre-wrap">{meetingData.transcription.join(' ')}</p>
                   )}
                 </div>
               </div>

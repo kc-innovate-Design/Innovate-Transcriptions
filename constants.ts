@@ -10,13 +10,13 @@ export const DEPARTMENTS = [
 ];
 
 export const ALL_ATTENDEES: Attendee[] = [
-  // Innovation Coaches
-  { id: '1', name: 'Alexander Bell', email: 'alex.bell@innovate-design.com', department: 'Innovation Coaches' },
-  { id: '2', name: 'Emma Farrow-Thomas', email: 'Emma.Farrow-Thomas@innovate-design.com', department: 'Innovation Coaches' },
-  { id: '3', name: 'Helen Smartt', email: 'helen.smartt@innovate-design.com', department: 'Innovation Coaches' },
-  { id: '4', name: 'Jean-Philippe Chameaux', email: 'Jean-Philippe.Chameaux@innovate-design.com', department: 'Innovation Coaches' },
-  { id: '5', name: 'Sam Smith', email: 'sam.smith@innovate-design.com', department: 'Innovation Coaches' },
-  { id: '6', name: 'Thomas Kelly', email: 'thomas.kelly@innovate-design.com', department: 'Innovation Coaches' },
+  // Administrators
+  { id: '21', name: 'Anouk Boukhemal', email: 'anouk.boukhemal@innovate-design.com', department: 'Administrators' },
+  { id: '22', name: 'Lucy Penfold', email: 'lucy.penfold@innovate-design.com', department: 'Administrators' },
+
+  // Business Support
+  { id: '23', name: 'Barbara Bouffard', email: 'barbara@innovate-design.com', department: 'Business Support' },
+  { id: '24', name: 'Grace Doughty', email: 'grace.doughty@innovate-design.com', department: 'Business Support' },
 
   // Designers
   { id: '8', name: 'Adam Davies', email: 'adam.davies@innovate-design.com', department: 'Designer' },
@@ -32,14 +32,15 @@ export const ALL_ATTENDEES: Attendee[] = [
   { id: '18', name: 'Peter Lidstone-Scott', email: 'peter.lidstone-scott@innovate-design.com', department: 'Designer' },
   { id: '19', name: 'Sally Usher', email: 'Sally.Usher@innovate-design.com', department: 'Designer' },
   { id: '20', name: 'Sean Irving', email: 'sean.irving@innovate-design.com', department: 'Designer' },
+  { id: '30', name: 'Sullivan Hayes', email: 'sullivan.hayes@innovate-design.com', department: 'Designer' },
 
-  // Administrators
-  { id: '21', name: 'Anouk Boukhemal', email: 'anouk.boukhemal@innovate-design.com', department: 'Administrators' },
-  { id: '22', name: 'Lucy Penfold', email: 'lucy.penfold@innovate-design.com', department: 'Administrators' },
-
-  // Business Support
-  { id: '23', name: 'Barbara Bouffard', email: 'barbara@innovate-design.com', department: 'Business Support' },
-  { id: '24', name: 'Grace Doughty', email: 'grace.doughty@innovate-design.com', department: 'Business Support' },
+  // Innovation Coaches
+  { id: '1', name: 'Alexander Bell', email: 'alex.bell@innovate-design.com', department: 'Innovation Coaches' },
+  { id: '2', name: 'Emma Farrow-Thomas', email: 'Emma.Farrow-Thomas@innovate-design.com', department: 'Innovation Coaches' },
+  { id: '3', name: 'Helen Smartt', email: 'helen.smartt@innovate-design.com', department: 'Innovation Coaches' },
+  { id: '4', name: 'Jean-Philippe Chameaux', email: 'Jean-Philippe.Chameaux@innovate-design.com', department: 'Innovation Coaches' },
+  { id: '5', name: 'Sam Smith', email: 'sam.smith@innovate-design.com', department: 'Innovation Coaches' },
+  { id: '6', name: 'Thomas Kelly', email: 'thomas.kelly@innovate-design.com', department: 'Innovation Coaches' },
 
   // Researchers and IP
   { id: '25', name: 'Beverley Maloney', email: 'beverley.maloney@innovate-design.com', department: 'Researchers and IP' },
