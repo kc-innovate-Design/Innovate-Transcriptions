@@ -133,7 +133,7 @@ const App: React.FC = () => {
 
       console.log("[Recording] Connecting to Gemini Live API...");
       const promise = ai.live.connect({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-live-2.5-flash',
         config: {
           responseModalities: [Modality.TEXT],
           inputAudioTranscription: {},
