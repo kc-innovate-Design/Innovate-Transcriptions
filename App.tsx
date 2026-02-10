@@ -1,16 +1,17 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  PlayIcon,
-  SquareIcon,
-  CheckCircleIcon,
-  Loader2Icon,
-  ChevronRightIcon,
-  UsersIcon,
-  LayoutDashboardIcon,
-  HistoryIcon,
-  SettingsIcon,
-  LogOutIcon,
-  UserIcon
+  Play,
+  Square,
+  CheckCircle,
+  Loader2,
+  ChevronRight,
+  Users,
+  LayoutDashboard,
+  History,
+  Settings,
+  LogOut,
+  User as UserIcon,
+  AlertCircle
 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
@@ -124,7 +125,7 @@ function App() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#fafafa]">
         <div className="animate-spin text-brand">
-          <Loader2Icon size={48} />
+          <Loader2 className="text-brand animate-spin" size={48} />
         </div>
       </div>
     );
@@ -144,7 +145,7 @@ function App() {
       <header className="sticky top-0 z-50 bg-white/70 backdrop-blur-xl border-b border-black/5 px-8 h-20 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="w-10 h-10 bg-brand rounded-xl flex items-center justify-center shadow-lg shadow-brand/20">
-            <LayoutDashboardIcon className="text-white" size={20} />
+            <LayoutDashboard className="text-white" size={20} />
           </div>
           <span className="text-xl font-bold tracking-tight">Innovate <span className="text-brand">Transcriptions</span></span>
         </div>
@@ -161,7 +162,7 @@ function App() {
             className="p-2 hover:bg-black/5 rounded-full transition-colors text-muted-foreground hover:text-red-500"
             title="Logout"
           >
-            <LogOutIcon size={20} />
+            <LogOut size={20} />
           </button>
         </div>
       </header>
@@ -194,7 +195,7 @@ function App() {
                   <h3 className="text-2xl font-bold mb-2">{type.label}</h3>
                   <p className="text-muted-foreground text-sm leading-relaxed">{type.description}</p>
                   <div className="absolute top-8 right-8 opacity-0 group-hover:opacity-100 transition-all duration-500 transform translate-x-4 group-hover:translate-x-0">
-                    <ChevronRightIcon className="text-brand group-hover:text-white" />
+                    <ChevronRight className="text-brand group-hover:text-white" />
                   </div>
                 </button>
               ))}
@@ -235,8 +236,8 @@ function App() {
                             });
                           }}
                           className={`px-5 py-2.5 rounded-2xl text-sm font-semibold transition-all duration-300 ${meetingData.attendees.includes(attendee.id)
-                              ? 'bg-brand text-white shadow-lg shadow-brand/20'
-                              : 'bg-[#f8f8f8] text-primary hover:bg-black/5'
+                            ? 'bg-brand text-white shadow-lg shadow-brand/20'
+                            : 'bg-[#f8f8f8] text-primary hover:bg-black/5'
                             }`}
                         >
                           {attendee.name}
@@ -252,7 +253,7 @@ function App() {
                 className="w-full h-18 bg-brand text-white rounded-3xl font-bold text-xl flex items-center justify-center gap-3 hover:bg-brand-dark transition-all duration-300 shadow-2xl shadow-brand/20 active:scale-[0.99]"
               >
                 <div className="bg-white/20 p-2 rounded-lg">
-                  <PlayIcon size={24} fill="white" />
+                  <Play size={24} fill="white" />
                 </div>
                 Start Transcription
               </button>
@@ -282,7 +283,7 @@ function App() {
                   <span className="font-bold tracking-widest uppercase text-xs text-brand">Live Transcription</span>
                 </div>
                 <div className="text-sm text-muted-foreground font-medium flex items-center gap-2 bg-[#f8f8f8] px-4 py-2 rounded-full">
-                  <UsersIcon size={14} />
+                  <Users size={14} />
                   {meetingData.attendees.length} Attendees
                 </div>
               </div>
@@ -308,7 +309,7 @@ function App() {
                 className="w-full h-18 bg-primary text-white rounded-3xl font-bold text-xl flex items-center justify-center gap-3 hover:bg-black transition-all duration-300 shadow-2xl mt-8 active:scale-[0.99]"
               >
                 <div className="bg-white/10 p-2 rounded-lg">
-                  <SquareIcon size={24} fill="white" />
+                  <Square size={24} fill="white" />
                 </div>
                 Finish & Save
               </button>
@@ -322,11 +323,11 @@ function App() {
               <div className="flex justify-center">
                 <div className="w-24 h-24 bg-green-500/10 rounded-full flex items-center justify-center">
                   {saveStatus === 'saving' ? (
-                    <Loader2Icon className="text-green-500 animate-spin" size={48} />
+                    <Loader2 className="text-green-500 animate-spin" size={48} />
                   ) : saveStatus === 'error' ? (
                     <AlertCircle className="text-red-500" size={48} />
                   ) : (
-                    <CheckCircleIcon className="text-green-500" size={48} />
+                    <CheckCircle className="text-green-500" size={48} />
                   )}
                 </div>
               </div>
@@ -362,7 +363,7 @@ function App() {
                 className="inline-flex items-center gap-2 bg-primary text-white px-10 py-5 rounded-3xl font-bold text-lg hover:bg-black transition-all shadow-xl active:scale-[0.98]"
               >
                 Return to Dashboard
-                <ChevronRightIcon size={20} />
+                <ChevronRight size={20} />
               </button>
             </div>
           </div>
