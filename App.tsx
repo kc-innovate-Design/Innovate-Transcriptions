@@ -180,10 +180,22 @@ const App: React.FC = () => {
     setStep(AppStep.FINISHED);
     setSaveStatus('saving');
 
+    const meetingTitle = meetingData.title || 'Untitled meeting';
+    const meetingType = meetingData.type || 'Standard meeting';
+    const transcriptionText = meetingData.transcription.length > 0
+      ? meetingData.transcription.join('\n\n')
+      : 'No transcription was captured during this session.';
+    const durationMins = Math.floor(recordingTime / 60);
+    const durationSecs = recordingTime % 60;
+    const durationStr = `${durationMins}m ${durationSecs}s`;
+    const dateStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+    const attendeeNames = meetingData.attendees.map(a => a.name).join(', ');
+
     try {
+      // Save transcription to Firestore
       await addDoc(collection(db, 'transcriptions'), {
-        title: meetingData.title,
-        type: meetingData.type,
+        title: meetingTitle,
+        type: meetingType,
         attendees: meetingData.attendees.map(a => ({ id: a.id, name: a.name, email: a.email })),
         transcription: meetingData.transcription,
         duration: recordingTime,
@@ -191,6 +203,43 @@ const App: React.FC = () => {
         createdBy: user?.uid,
         userEmail: user?.email
       });
+
+      // Queue emails for each selected attendee
+      const emailPromises = meetingData.attendees.map(attendee =>
+        addDoc(collection(db, 'mail'), {
+          to: attendee.email,
+          message: {
+            subject: `Meeting Transcription: ${meetingTitle} — ${dateStr}`,
+            html: `
+              <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #121622;">
+                <div style="background: #F36D5B; padding: 24px 32px; border-radius: 16px 16px 0 0;">
+                  <h1 style="color: white; margin: 0; font-size: 22px;">Innovate Transcriptions</h1>
+                </div>
+                <div style="background: #ffffff; padding: 32px; border: 1px solid #eee; border-top: none; border-radius: 0 0 16px 16px;">
+                  <p style="font-size: 16px; margin-top: 0;">Hi ${attendee.name},</p>
+                  <p style="font-size: 16px;">Here is the transcription from your recent meeting:</p>
+                  
+                  <table style="width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px;">
+                    <tr><td style="padding: 8px 0; color: #888; width: 120px;">Meeting</td><td style="padding: 8px 0; font-weight: 600;">${meetingTitle}</td></tr>
+                    <tr><td style="padding: 8px 0; color: #888;">Type</td><td style="padding: 8px 0;">${meetingType}</td></tr>
+                    <tr><td style="padding: 8px 0; color: #888;">Date</td><td style="padding: 8px 0;">${dateStr}</td></tr>
+                    <tr><td style="padding: 8px 0; color: #888;">Duration</td><td style="padding: 8px 0;">${durationStr}</td></tr>
+                    <tr><td style="padding: 8px 0; color: #888;">Attendees</td><td style="padding: 8px 0;">${attendeeNames}</td></tr>
+                  </table>
+
+                  <div style="background: #f8f8f8; border-radius: 12px; padding: 24px; margin: 24px 0; white-space: pre-wrap; font-size: 15px; line-height: 1.8; color: #333;">
+${transcriptionText}
+                  </div>
+
+                  <p style="font-size: 13px; color: #aaa; margin-bottom: 0;">This email was sent automatically by Innovate Transcriptions.</p>
+                </div>
+              </div>
+            `
+          }
+        })
+      );
+      await Promise.all(emailPromises);
+
       setSaveStatus('saved');
     } catch (err) {
       console.error("Error saving transcription:", err);
@@ -214,8 +263,8 @@ const App: React.FC = () => {
               key={attendee.id}
               onClick={() => handleToggleAttendee(attendee)}
               className={`px-4 py-2 rounded-full border text-sm transition-all flex items-center gap-2 ${isSelected
-                  ? 'bg-brand border-brand text-white shadow-md shadow-brand/10'
-                  : 'bg-white border-gray-200 text-gray-600 hover:border-brand/40'
+                ? 'bg-brand border-brand text-white shadow-md shadow-brand/10'
+                : 'bg-white border-gray-200 text-gray-600 hover:border-brand/40'
                 }`}
             >
               {attendee.name}
@@ -391,8 +440,8 @@ const App: React.FC = () => {
                 <button
                   onClick={() => setIsPaused(!isPaused)}
                   className={`flex items-center gap-2 px-10 py-5 rounded-2xl font-medium transition-all text-lg ${isPaused
-                      ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                     }`}
                 >
                   {isPaused ? <Play size={22} /> : <Pause size={22} />}
