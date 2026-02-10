@@ -1,0 +1,12 @@
+node_modules
+dist
+.git
+.firebase
+firebase.json
+.firebaserc
+firestore.rules
+task.md
+walkthrough.md
+implementation_plan.md
+npm-debug.log
+error
