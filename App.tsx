@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AppStep, MeetingData, Attendee, MEETING_TYPES } from './types';
 import { ALL_ATTENDEES, DEPARTMENTS } from './constants';
 import { Mic, Pause, Play, Square, CheckCircle, ChevronRight, UserPlus, Clock, Calendar, MessageSquare, LogOut, User, Loader2 } from 'lucide-react';
@@ -48,6 +48,13 @@ const App: React.FC = () => {
   const [, setSessionPromise] = useState<any>(null);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  // Refs to avoid stale closures in audio callbacks
+  const isRecordingRef = useRef(false);
+  const isPausedRef = useRef(false);
+
+  useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
+  useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
 
   // Auth State
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -135,7 +142,7 @@ const App: React.FC = () => {
             const scriptProcessor = inputAudioContext.createScriptProcessor(4096, 1, 1);
 
             scriptProcessor.onaudioprocess = (e) => {
-              if (isRecording && !isPaused) {
+              if (isRecordingRef.current && !isPausedRef.current) {
                 const inputData = e.inputBuffer.getChannelData(0);
                 const pcmBlob = createBlob(inputData);
                 promise.then((session) => {
