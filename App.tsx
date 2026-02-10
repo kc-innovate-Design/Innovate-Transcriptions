@@ -191,13 +191,59 @@ const App: React.FC = () => {
     const dateStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
     const attendeeNames = meetingData.attendees.map(a => a.name).join(', ');
 
+    // Generate AI summary of the transcription
+    let summaryText = '';
+    if (meetingData.transcription.length > 0) {
+      try {
+        const ai = new GoogleGenAI({ apiKey: "AIzaSyCKw3U6eyMY9-Weoi0wB3BiMb_pIkm8Owk" });
+        const summaryResponse = await ai.models.generateContent({
+          model: 'gemini-2.0-flash',
+          contents: `You are a professional meeting assistant. Summarise the following meeting transcription into a clear, concise summary. Include:
+- Key discussion points
+- Decisions made
+- Action items (if any)
+
+Write in UK English. Use bullet points for clarity. Keep it concise but comprehensive.
+
+Meeting: ${meetingTitle}
+Type: ${meetingType}
+Attendees: ${attendeeNames}
+
+Transcription:
+${transcriptionText}`
+        });
+        summaryText = summaryResponse.text || '';
+      } catch (err) {
+        console.error("Error generating summary:", err);
+        summaryText = 'Summary could not be generated for this meeting.';
+      }
+    }
+
+    // Convert markdown bullet points to HTML for the email
+    const summaryHtml = summaryText
+      .split('\n')
+      .map(line => {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+          return `<li style="margin-bottom: 6px;">${trimmed.substring(2)}</li>`;
+        }
+        if (trimmed.startsWith('## ') || trimmed.startsWith('### ')) {
+          const heading = trimmed.replace(/^#+\s/, '');
+          return `<h4 style="margin: 16px 0 8px 0; color: #121622; font-size: 15px;">${heading}</h4>`;
+        }
+        if (trimmed === '') return '';
+        return `<p style="margin: 4px 0;">${trimmed}</p>`;
+      })
+      .join('\n');
+
     try {
-      // Save transcription to Firestore
+      // Save transcription + summary to Firestore
       await addDoc(collection(db, 'transcriptions'), {
         title: meetingTitle,
         type: meetingType,
         attendees: meetingData.attendees.map(a => ({ id: a.id, name: a.name, email: a.email })),
         transcription: meetingData.transcription,
+        summary: summaryText,
         duration: recordingTime,
         createdAt: serverTimestamp(),
         createdBy: user?.uid,
@@ -227,7 +273,17 @@ const App: React.FC = () => {
                     <tr><td style="padding: 8px 0; color: #888;">Attendees</td><td style="padding: 8px 0;">${attendeeNames}</td></tr>
                   </table>
 
-                  <div style="background: #f8f8f8; border-radius: 12px; padding: 24px; margin: 24px 0; white-space: pre-wrap; font-size: 15px; line-height: 1.8; color: #333;">
+                  ${summaryText ? `
+                  <div style="background: #FFF7ED; border-left: 4px solid #F36D5B; border-radius: 0 12px 12px 0; padding: 20px 24px; margin: 24px 0;">
+                    <h3 style="margin: 0 0 12px 0; font-size: 16px; color: #F36D5B;">✨ AI Summary</h3>
+                    <div style="font-size: 14px; line-height: 1.7; color: #333;">
+                      ${summaryHtml}
+                    </div>
+                  </div>
+                  ` : ''}
+
+                  <h3 style="margin: 24px 0 12px 0; font-size: 16px; color: #888;">Full Transcription</h3>
+                  <div style="background: #f8f8f8; border-radius: 12px; padding: 24px; margin: 0 0 24px 0; white-space: pre-wrap; font-size: 15px; line-height: 1.8; color: #333;">
 ${transcriptionText}
                   </div>
 
