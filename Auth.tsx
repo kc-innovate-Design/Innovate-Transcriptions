@@ -14,7 +14,7 @@ interface AuthProps {
     onLogin: (user: User) => void;
 }
 
-const ALLOWED_DOMAINS = ['innovate-design.com', 'innovate-design.co.uk', 'logic-lab.ai'];
+const ALLOWED_DOMAINS = ['innovate-design.com', 'innovate-design.co.uk', 'innovate-design.fr', 'logic-lab.ai'];
 
 export function Auth({ onLogin }: AuthProps) {
     const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
@@ -47,7 +47,7 @@ export function Auth({ onLogin }: AuthProps) {
                 onLogin(userCredential.user);
             } else if (mode === 'register') {
                 if (!validateDomain(email)) {
-                    throw new Error('Please use an Innovate Design or Logic Lab email address (@innovate-design.com, @innovate-design.co.uk, or @logic-lab.ai).');
+                    throw new Error('Please use an approved company email address (@innovate-design.com, @innovate-design.co.uk, @innovate-design.fr, or @logic-lab.ai).');
                 }
                 if (password !== confirmPassword) {
                     throw new Error('Passwords do not match.');
