@@ -132,10 +132,10 @@ const App: React.FC = () => {
       console.log("[Recording] AudioContext created, sampleRate:", inputAudioContext.sampleRate);
 
       console.log("[Recording] Connecting to Gemini Live API...");
-      const promise = ai.live.connect({
-        model: 'gemini-live-2.5-flash',
+      const session = await ai.live.connect({
+        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         config: {
-          responseModalities: [Modality.TEXT],
+          responseModalities: [Modality.AUDIO],
           inputAudioTranscription: {},
           outputAudioTranscription: {},
           systemInstruction: 'You are a professional meeting transcriber. Transcribe the conversation accurately in UK English. Do not add summaries, only transcription.'
@@ -155,8 +155,11 @@ const App: React.FC = () => {
                 if (audioChunkCount % 50 === 1) {
                   console.log(`[Recording] Sending audio chunk #${audioChunkCount}`);
                 }
-                promise.then((session) => {
-                  session.sendRealtimeInput({ media: pcmBlob });
+                session.sendRealtimeInput({
+                  audio: {
+                    data: pcmBlob.data,
+                    mimeType: pcmBlob.mimeType
+                  }
                 });
               }
             };
@@ -166,7 +169,7 @@ const App: React.FC = () => {
             console.log("[Recording] Audio pipeline connected");
           },
           onmessage: async (message: LiveServerMessage) => {
-            console.log("[Recording] Gemini message received:", JSON.stringify(message).substring(0, 200));
+            console.log("[Recording] Gemini message received:", JSON.stringify(message).substring(0, 300));
             if (message.serverContent?.inputTranscription) {
               const text = message.serverContent.inputTranscription.text;
               if (text.trim()) {
@@ -178,15 +181,15 @@ const App: React.FC = () => {
               }
             }
           },
-          onerror: (e) => console.error("[Recording] Gemini Error:", e),
-          onclose: () => console.log("[Recording] Gemini session closed")
+          onerror: (e: any) => console.error("[Recording] Gemini Error:", e?.message || e),
+          onclose: (e: any) => console.log("[Recording] Gemini session closed — code:", e?.code, "reason:", e?.reason || "none")
         }
       });
 
-      setSessionPromise(promise);
+      setSessionPromise(session);
       setIsRecording(true);
       setStep(AppStep.RECORDING);
-      console.log("[Recording] Recording started");
+      console.log("[Recording] Recording started, session:", typeof session);
     } catch (err) {
       console.error("[Recording] Failed to start recording:", err);
       alert("Microphone access is required to record meetings.");
