@@ -122,29 +122,39 @@ const App: React.FC = () => {
 
   const startRecordingSession = async () => {
     try {
+      console.log("[Recording] Requesting microphone access...");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      console.log("[Recording] Microphone access granted, tracks:", stream.getAudioTracks().length);
       setAudioStream(stream);
 
       const ai = new GoogleGenAI({ apiKey: "AIzaSyCKw3U6eyMY9-Weoi0wB3BiMb_pIkm8Owk" });
       const inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+      console.log("[Recording] AudioContext created, sampleRate:", inputAudioContext.sampleRate);
 
+      console.log("[Recording] Connecting to Gemini Live API...");
       const promise = ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+        model: 'gemini-2.0-flash-live-001',
         config: {
-          responseModalities: [Modality.AUDIO],
+          responseModalities: [Modality.TEXT],
           inputAudioTranscription: {},
           outputAudioTranscription: {},
           systemInstruction: 'You are a professional meeting transcriber. Transcribe the conversation accurately in UK English. Do not add summaries, only transcription.'
         },
         callbacks: {
           onopen: () => {
+            console.log("[Recording] Gemini session OPEN — setting up audio pipeline");
             const source = inputAudioContext.createMediaStreamSource(stream);
             const scriptProcessor = inputAudioContext.createScriptProcessor(4096, 1, 1);
+            let audioChunkCount = 0;
 
             scriptProcessor.onaudioprocess = (e) => {
               if (isRecordingRef.current && !isPausedRef.current) {
                 const inputData = e.inputBuffer.getChannelData(0);
                 const pcmBlob = createBlob(inputData);
+                audioChunkCount++;
+                if (audioChunkCount % 50 === 1) {
+                  console.log(`[Recording] Sending audio chunk #${audioChunkCount}`);
+                }
                 promise.then((session) => {
                   session.sendRealtimeInput({ media: pcmBlob });
                 });
@@ -153,11 +163,14 @@ const App: React.FC = () => {
 
             source.connect(scriptProcessor);
             scriptProcessor.connect(inputAudioContext.destination);
+            console.log("[Recording] Audio pipeline connected");
           },
           onmessage: async (message: LiveServerMessage) => {
+            console.log("[Recording] Gemini message received:", JSON.stringify(message).substring(0, 200));
             if (message.serverContent?.inputTranscription) {
               const text = message.serverContent.inputTranscription.text;
               if (text.trim()) {
+                console.log("[Recording] Transcription:", text.substring(0, 100));
                 setMeetingData(prev => ({
                   ...prev,
                   transcription: [...prev.transcription, text]
@@ -165,16 +178,17 @@ const App: React.FC = () => {
               }
             }
           },
-          onerror: (e) => console.error("Gemini Error:", e),
-          onclose: () => console.log("Gemini session closed")
+          onerror: (e) => console.error("[Recording] Gemini Error:", e),
+          onclose: () => console.log("[Recording] Gemini session closed")
         }
       });
 
       setSessionPromise(promise);
       setIsRecording(true);
       setStep(AppStep.RECORDING);
+      console.log("[Recording] Recording started");
     } catch (err) {
-      console.error("Failed to start recording:", err);
+      console.error("[Recording] Failed to start recording:", err);
       alert("Microphone access is required to record meetings.");
     }
   };
