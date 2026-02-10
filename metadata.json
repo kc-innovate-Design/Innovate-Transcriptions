@@ -1,0 +1,7 @@
+{
+  "name": "Innovate Transcription",
+  "description": "A minimalist meeting transcription tool for modern design consultancies, featuring real-time speech-to-text and attendee management.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
