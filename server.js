@@ -14,8 +14,7 @@ app.use(express.json({ limit: '10mb' }));
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 if (!GEMINI_API_KEY) {
-    console.error('FATAL: GEMINI_API_KEY environment variable is not set');
-    process.exit(1);
+    console.warn('WARNING: GEMINI_API_KEY environment variable is not set. AI features will not work.');
 }
 
 // Middleware to verify Firebase Auth token (basic check)
@@ -33,12 +32,14 @@ const requireAuth = (req, res, next) => {
 
 // Return the Gemini API key to authenticated users (for Live WebSocket)
 app.get('/api/gemini-key', requireAuth, (req, res) => {
+    if (!GEMINI_API_KEY) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
     res.json({ key: GEMINI_API_KEY });
 });
 
 // Proxy for summary generation (key never reaches the browser)
 app.post('/api/summary', requireAuth, async (req, res) => {
     try {
+        if (!GEMINI_API_KEY) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
         const { meetingTitle, meetingType, attendeeNames, transcriptionText } = req.body;
 
         const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
