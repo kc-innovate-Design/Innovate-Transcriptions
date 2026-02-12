@@ -3,7 +3,7 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
-    apiKey: "AIzaSyCKw3U6eyMY9-Weoi0wB3BiMb_pIkm8Owk",
+    apiKey: "AIzaSyB3o3TOy2d-9241sAJImCxRRRVH6lHgddA",
     authDomain: "innovate-transcriptions.firebaseapp.com",
     projectId: "innovate-transcriptions",
     storageBucket: "innovate-transcriptions.firebasestorage.app",
