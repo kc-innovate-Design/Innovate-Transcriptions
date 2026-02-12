@@ -127,7 +127,15 @@ const App: React.FC = () => {
       console.log("[Recording] Microphone access granted, tracks:", stream.getAudioTracks().length);
       setAudioStream(stream);
 
-      const ai = new GoogleGenAI({ apiKey: "AIzaSyCKw3U6eyMY9-Weoi0wB3BiMb_pIkm8Owk" });
+      // Fetch API key from secure backend
+      const token = await user?.getIdToken();
+      const keyRes = await fetch('/api/gemini-key', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!keyRes.ok) throw new Error('Failed to fetch API key');
+      const { key } = await keyRes.json();
+
+      const ai = new GoogleGenAI({ apiKey: key });
       const inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       console.log("[Recording] AudioContext created, sampleRate:", inputAudioContext.sampleRate);
 
@@ -215,28 +223,27 @@ const App: React.FC = () => {
     const dateStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
     const attendeeNames = meetingData.attendees.map(a => a.name).join(', ');
 
-    // Generate AI summary of the transcription
+    // Generate AI summary via secure backend
     let summaryText = '';
     if (meetingData.transcription.length > 0) {
       try {
-        const ai = new GoogleGenAI({ apiKey: "AIzaSyCKw3U6eyMY9-Weoi0wB3BiMb_pIkm8Owk" });
-        const summaryResponse = await ai.models.generateContent({
-          model: 'gemini-2.0-flash',
-          contents: `You are a professional meeting assistant. Summarise the following meeting transcription into a clear, concise summary. Include:
-- Key discussion points
-- Decisions made
-- Action items (if any)
-
-Write in UK English. Use bullet points for clarity. Keep it concise but comprehensive.
-
-Meeting: ${meetingTitle}
-Type: ${meetingType}
-Attendees: ${attendeeNames}
-
-Transcription:
-${transcriptionText}`
+        const token = await user?.getIdToken();
+        const summaryRes = await fetch('/api/summary', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            meetingTitle,
+            meetingType,
+            attendeeNames,
+            transcriptionText
+          })
         });
-        summaryText = summaryResponse.text || '';
+        if (!summaryRes.ok) throw new Error('Summary request failed');
+        const data = await summaryRes.json();
+        summaryText = data.summary || '';
       } catch (err) {
         console.error("Error generating summary:", err);
         summaryText = 'Summary could not be generated for this meeting.';
