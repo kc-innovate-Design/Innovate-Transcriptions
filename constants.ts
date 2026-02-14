@@ -52,5 +52,6 @@ export const ALL_ATTENDEES: Attendee[] = [
   { id: '7', name: 'Timothy Mount', email: 'tim@innovate-design.com', department: 'Researchers and IP' },
   { id: '28', name: 'Toby King', email: 'toby.king@innovate-design.co.uk', department: 'Researchers and IP' },
   { id: '29', name: 'Valerie Plaud', email: 'valerie.plaud@innovate-design.co.uk', department: 'Researchers and IP' },
-  { id: '34', name: 'KCGMAIL', email: 'kcope1970@gmail.com', department: 'Researchers and IP' }
+  { id: '34', name: 'KCGMAIL', email: 'kcope1970@gmail.com', department: 'Researchers and IP' },
+  { id: '35', name: 'KCCOM', email: 'kevin.cope@innovate-design.com', department: 'Researchers and IP' }
 ];
