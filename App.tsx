@@ -45,13 +45,18 @@ const App: React.FC = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
-  const [, setSessionPromise] = useState<any>(null);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'reconnecting'>('connected');
 
   // Refs to avoid stale closures in audio callbacks
   const isRecordingRef = useRef(false);
   const isPausedRef = useRef(false);
+  const sessionRef = useRef<any>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const transcriptionContainerRef = useRef<HTMLDivElement>(null);
+  const transcriptBufferRef = useRef<string[]>([]);
+  const flushTimerRef = useRef<any>(null);
 
   useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
   useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
@@ -89,7 +94,48 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [isRecording, isPaused]);
 
+  // Flush any buffered transcript chunks into state
+  const flushTranscriptBuffer = () => {
+    if (transcriptBufferRef.current.length > 0) {
+      const chunks = [...transcriptBufferRef.current];
+      transcriptBufferRef.current = [];
+      setMeetingData(prev => ({
+        ...prev,
+        transcription: [...prev.transcription, ...chunks]
+      }));
+    }
+  };
+
+  // Auto-scroll transcription to bottom when new text arrives
+  useEffect(() => {
+    if (transcriptionContainerRef.current) {
+      transcriptionContainerRef.current.scrollTop = transcriptionContainerRef.current.scrollHeight;
+    }
+  }, [meetingData.transcription]);
+
+  // Cleanup session and AudioContext
+  const cleanupSession = () => {
+    try {
+      if (sessionRef.current) {
+        sessionRef.current.close?.();
+        sessionRef.current = null;
+      }
+    } catch (e) { console.warn('[Recording] Error closing session:', e); }
+    try {
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close();
+        audioContextRef.current = null;
+      }
+    } catch (e) { console.warn('[Recording] Error closing AudioContext:', e); }
+    if (flushTimerRef.current) {
+      clearInterval(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+    flushTranscriptBuffer();
+  };
+
   const handleReset = () => {
+    cleanupSession();
     setStep(AppStep.HOME);
     setMeetingData({
       title: '',
@@ -101,6 +147,7 @@ const App: React.FC = () => {
     setIsRecording(false);
     setIsPaused(false);
     setSaveStatus('idle');
+    setConnectionStatus('connected');
   };
 
   const handleToggleAttendee = (attendee: Attendee) => {
@@ -137,7 +184,11 @@ const App: React.FC = () => {
 
       const ai = new GoogleGenAI({ apiKey: key });
       const inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+      audioContextRef.current = inputAudioContext;
       console.log("[Recording] AudioContext created, sampleRate:", inputAudioContext.sampleRate);
+
+      // Start a timer to flush buffered transcript chunks every 300ms
+      flushTimerRef.current = setInterval(flushTranscriptBuffer, 300);
 
       console.log("[Recording] Connecting to Gemini Live API...");
       const session = await ai.live.connect({
@@ -151,6 +202,7 @@ const App: React.FC = () => {
         callbacks: {
           onopen: () => {
             console.log("[Recording] Gemini session OPEN — setting up audio pipeline");
+            setConnectionStatus('connected');
             const source = inputAudioContext.createMediaStreamSource(stream);
             const scriptProcessor = inputAudioContext.createScriptProcessor(4096, 1, 1);
             let audioChunkCount = 0;
@@ -182,20 +234,28 @@ const App: React.FC = () => {
               const text = message.serverContent.inputTranscription.text;
               if (text.trim()) {
                 console.log("[Recording] Transcription:", text.substring(0, 100));
-                setMeetingData(prev => ({
-                  ...prev,
-                  transcription: [...prev.transcription, text]
-                }));
+                // Buffer chunks instead of updating state on every message
+                transcriptBufferRef.current.push(text);
               }
             }
           },
-          onerror: (e: any) => console.error("[Recording] Gemini Error:", e?.message || e),
-          onclose: (e: any) => console.log("[Recording] Gemini session closed — code:", e?.code, "reason:", e?.reason || "none")
+          onerror: (e: any) => {
+            console.error("[Recording] Gemini Error:", e?.message || e);
+            setConnectionStatus('disconnected');
+          },
+          onclose: (e: any) => {
+            console.log("[Recording] Gemini session closed — code:", e?.code, "reason:", e?.reason || "none");
+            // Only show disconnected if we were still recording (unexpected close)
+            if (isRecordingRef.current) {
+              setConnectionStatus('disconnected');
+            }
+          }
         }
       });
 
-      setSessionPromise(session);
+      sessionRef.current = session;
       setIsRecording(true);
+      setConnectionStatus('connected');
       setStep(AppStep.RECORDING);
       console.log("[Recording] Recording started, session:", typeof session);
     } catch (err) {
@@ -205,6 +265,9 @@ const App: React.FC = () => {
   };
 
   const finishRecording = async () => {
+    // Flush any remaining buffered transcript chunks
+    flushTranscriptBuffer();
+    cleanupSession();
     if (audioStream) {
       audioStream.getTracks().forEach(track => track.stop());
     }
@@ -484,8 +547,8 @@ ${transcriptionText}
               <div className="flex justify-between items-start">
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-brand font-medium mb-2 uppercase tracking-widest text-xs">
-                    <span className={`w-2.5 h-2.5 rounded-full ${isPaused ? 'bg-amber-400' : 'bg-red-500 animate-pulse'}`}></span>
-                    {isPaused ? 'Recording paused' : 'Live recording...'}
+                    <span className={`w-2.5 h-2.5 rounded-full ${connectionStatus === 'disconnected' ? 'bg-red-700' : isPaused ? 'bg-amber-400' : 'bg-red-500 animate-pulse'}`}></span>
+                    {connectionStatus === 'disconnected' ? 'Connection lost — transcription may have stopped' : isPaused ? 'Recording paused' : 'Live recording...'}
                   </div>
                   <h2 className="text-4xl font-medium tracking-tight text-primary">{meetingData.title || 'Untitled meeting'}</h2>
                   <p className="text-gray-400 text-lg">{meetingData.type || 'Standard meeting'}</p>
@@ -510,7 +573,7 @@ ${transcriptionText}
 
               <div className="space-y-4">
                 <h3 className="text-xs font-semibold uppercase tracking-widest text-gray-400">Live transcription</h3>
-                <div className="bg-gray-50/50 rounded-3xl p-8 h-[350px] overflow-y-auto font-light text-xl leading-relaxed scroll-smooth border border-gray-100">
+                <div ref={transcriptionContainerRef} className="bg-gray-50/50 rounded-3xl p-8 h-[350px] overflow-y-auto font-light text-xl leading-relaxed scroll-smooth border border-gray-100">
                   {meetingData.transcription.length === 0 ? (
                     <div className="h-full flex items-center justify-center text-gray-300 italic">
                       Waiting for speech...

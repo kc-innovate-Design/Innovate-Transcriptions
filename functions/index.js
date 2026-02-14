@@ -13,6 +13,21 @@ const gmailAppPassword = defineString("GMAIL_APP_PASSWORD", {
     description: "Gmail App Password for SMTP authentication",
 });
 
+// Lazily initialised transporter — reused across invocations in the same instance
+let _transporter = null;
+function getTransporter() {
+    if (!_transporter) {
+        _transporter = nodemailer.createTransport({
+            service: "gmail",
+            auth: {
+                user: gmailUser.value(),
+                pass: gmailAppPassword.value(),
+            },
+        });
+    }
+    return _transporter;
+}
+
 exports.sendEmail = onDocumentCreated("mail/{docId}", async (event) => {
     const snap = event.data;
     if (!snap) {
@@ -33,14 +48,7 @@ exports.sendEmail = onDocumentCreated("mail/{docId}", async (event) => {
         return;
     }
 
-    // Create transporter with Gmail SMTP
-    const transporter = nodemailer.createTransport({
-        service: "gmail",
-        auth: {
-            user: gmailUser.value(),
-            pass: gmailAppPassword.value(),
-        },
-    });
+    const transporter = getTransporter();
 
     try {
         console.log(`Sending email to: ${to} | Subject: ${message.subject}`);

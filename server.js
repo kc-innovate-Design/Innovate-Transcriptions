@@ -17,6 +17,9 @@ if (!GEMINI_API_KEY) {
     console.warn('WARNING: GEMINI_API_KEY environment variable is not set. AI features will not work.');
 }
 
+// Reuse a single GenAI client instance across requests
+const ai = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
+
 // Middleware to verify Firebase Auth token (basic check)
 const requireAuth = (req, res, next) => {
     const authHeader = req.headers.authorization;
@@ -39,10 +42,9 @@ app.get('/api/gemini-key', requireAuth, (req, res) => {
 // Proxy for summary generation (key never reaches the browser)
 app.post('/api/summary', requireAuth, async (req, res) => {
     try {
-        if (!GEMINI_API_KEY) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
+        if (!ai) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
         const { meetingTitle, meetingType, attendeeNames, transcriptionText } = req.body;
 
-        const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
         const summaryResponse = await ai.models.generateContent({
             model: 'gemini-2.0-flash',
             contents: `You are a professional meeting assistant. Summarise the following meeting transcription into a clear, concise summary. Include:
