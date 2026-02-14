@@ -21,7 +21,7 @@ export const ALL_ATTENDEES: Attendee[] = [
 
   // Designers
   { id: '8', name: 'Adam Davies', email: 'adam.davies@innovate-design.com', department: 'Designer' },
-  { id: '32', name: 'Alastair Swanwick', email: 'alastair@innovate-design.com', department: 'Designer' },
+  { id: '32', name: 'Alastair Swanwick', email: 'alastair@innovate-design.com', department: 'Business Support' },
   { id: '9', name: 'Alex Gunning', email: 'alex.gunning@innovate-design.com', department: 'Designer' },
   { id: '10', name: 'Ben Shutler', email: 'ben.shutler@innovate-design.com', department: 'Designer' },
   { id: '11', name: 'Donna Bennett', email: 'donna.bennett@innovate-design.com', department: 'Designer' },
