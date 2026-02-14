@@ -548,7 +548,7 @@ ${transcriptionText}
         )}
 
         {step === AppStep.DETAILS && (
-          <div className={`py-16 max-w-[1000px] w-full px-8 space-y-12 transition-all duration-300 ${stepTransition === 'exiting' ? 'opacity-0 translate-y-4' : stepTransition === 'entering' ? 'opacity-0 translate-y-4 animate-[slideUp_0.4s_ease-out_forwards]' : 'opacity-100'}`}>
+          <div className={`pb-32 py-16 max-w-[1000px] w-full px-8 space-y-12 transition-all duration-300 ${stepTransition === 'exiting' ? 'opacity-0 translate-y-4' : stepTransition === 'entering' ? 'opacity-0 translate-y-4 animate-[slideUp_0.4s_ease-out_forwards]' : 'opacity-100'}`}>
             <div className="space-y-4">
               <h2 className="text-4xl font-medium tracking-tight">Meeting details</h2>
               <p className="text-gray-500 text-lg">Provide the context and select the attendees for this session.</p>
@@ -581,58 +581,58 @@ ${transcriptionText}
               </div>
             </div>
 
+            {/* Meeting Presets */}
+            <div className="flex flex-wrap gap-3">
+              {(() => {
+                const icMembers = ALL_ATTENDEES.filter(a => a.department === 'Innovation Coaches');
+                const allIcSelected = icMembers.every(m => meetingData.attendees.some(a => a.id === m.id));
+                return (
+                  <button
+                    onClick={() => {
+                      if (allIcSelected) {
+                        const icIds = new Set(icMembers.map(m => m.id));
+                        setMeetingData(prev => ({ ...prev, title: prev.title === 'IC Team Meeting' ? '' : prev.title, attendees: prev.attendees.filter(a => !icIds.has(a.id)) }));
+                      } else {
+                        const currentIds = new Set(meetingData.attendees.map(a => a.id));
+                        const merged = [...meetingData.attendees, ...icMembers.filter(m => !currentIds.has(m.id))];
+                        setMeetingData(prev => ({ ...prev, title: prev.title || 'IC Team Meeting', attendees: merged }));
+                      }
+                    }}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl border text-sm font-medium transition-colors ${allIcSelected ? 'bg-brand border-brand text-white' : 'border-brand/20 bg-brand/5 text-brand hover:bg-brand/10'}`}
+                  >
+                    <Zap size={14} />
+                    IC Team Meeting
+                  </button>
+                );
+              })()}
+              {(() => {
+                const designMembers = ALL_ATTENDEES.filter(a => a.department === 'Designer');
+                const allDesignSelected = designMembers.every(m => meetingData.attendees.some(a => a.id === m.id));
+                return (
+                  <button
+                    onClick={() => {
+                      if (allDesignSelected) {
+                        const designIds = new Set(designMembers.map(m => m.id));
+                        setMeetingData(prev => ({ ...prev, title: prev.title === 'Designer Team Meeting' ? '' : prev.title, attendees: prev.attendees.filter(a => !designIds.has(a.id)) }));
+                      } else {
+                        const currentIds = new Set(meetingData.attendees.map(a => a.id));
+                        const merged = [...meetingData.attendees, ...designMembers.filter(m => !currentIds.has(m.id))];
+                        setMeetingData(prev => ({ ...prev, title: prev.title || 'Designer Team Meeting', attendees: merged }));
+                      }
+                    }}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl border text-sm font-medium transition-colors ${allDesignSelected ? 'bg-brand border-brand text-white' : 'border-brand/20 bg-brand/5 text-brand hover:bg-brand/10'}`}
+                  >
+                    <Zap size={14} />
+                    Designer Team Meeting
+                  </button>
+                );
+              })()}
+            </div>
+
             <div className="space-y-10">
               <div className="flex justify-between items-end border-b border-gray-100 pb-4">
                 <h3 className="text-2xl font-medium">Attendees</h3>
                 <span className="text-sm text-gray-400 font-medium">{meetingData.attendees.length} selected</span>
-              </div>
-
-              {/* Meeting Presets */}
-              <div className="flex flex-wrap gap-3">
-                {(() => {
-                  const icMembers = ALL_ATTENDEES.filter(a => a.department === 'Innovation Coaches');
-                  const allIcSelected = icMembers.every(m => meetingData.attendees.some(a => a.id === m.id));
-                  return (
-                    <button
-                      onClick={() => {
-                        if (allIcSelected) {
-                          const icIds = new Set(icMembers.map(m => m.id));
-                          setMeetingData(prev => ({ ...prev, title: prev.title === 'IC Team Meeting' ? '' : prev.title, attendees: prev.attendees.filter(a => !icIds.has(a.id)) }));
-                        } else {
-                          const currentIds = new Set(meetingData.attendees.map(a => a.id));
-                          const merged = [...meetingData.attendees, ...icMembers.filter(m => !currentIds.has(m.id))];
-                          setMeetingData(prev => ({ ...prev, title: prev.title || 'IC Team Meeting', attendees: merged }));
-                        }
-                      }}
-                      className={`flex items-center gap-2 px-5 py-2.5 rounded-xl border text-sm font-medium transition-colors ${allIcSelected ? 'bg-brand border-brand text-white' : 'border-brand/20 bg-brand/5 text-brand hover:bg-brand/10'}`}
-                    >
-                      <Zap size={14} />
-                      IC Team Meeting
-                    </button>
-                  );
-                })()}
-                {(() => {
-                  const designMembers = ALL_ATTENDEES.filter(a => a.department === 'Designer');
-                  const allDesignSelected = designMembers.every(m => meetingData.attendees.some(a => a.id === m.id));
-                  return (
-                    <button
-                      onClick={() => {
-                        if (allDesignSelected) {
-                          const designIds = new Set(designMembers.map(m => m.id));
-                          setMeetingData(prev => ({ ...prev, title: prev.title === 'Designer Team Meeting' ? '' : prev.title, attendees: prev.attendees.filter(a => !designIds.has(a.id)) }));
-                        } else {
-                          const currentIds = new Set(meetingData.attendees.map(a => a.id));
-                          const merged = [...meetingData.attendees, ...designMembers.filter(m => !currentIds.has(m.id))];
-                          setMeetingData(prev => ({ ...prev, title: prev.title || 'Designer Team Meeting', attendees: merged }));
-                        }
-                      }}
-                      className={`flex items-center gap-2 px-5 py-2.5 rounded-xl border text-sm font-medium transition-colors ${allDesignSelected ? 'bg-brand border-brand text-white' : 'border-brand/20 bg-brand/5 text-brand hover:bg-brand/10'}`}
-                    >
-                      <Zap size={14} />
-                      Designer Team Meeting
-                    </button>
-                  );
-                })()}
               </div>
 
               {renderAttendeeGroup("Innovation Coaches")}
@@ -646,20 +646,22 @@ ${transcriptionText}
               {renderAttendeeGroup("Researchers and IP")}
             </div>
 
-            <div className="pt-10 flex items-center justify-between border-t border-gray-100">
-              <button
-                onClick={() => transitionToStep(AppStep.HOME)}
-                className="text-gray-400 hover:text-gray-600 font-medium px-4 py-2 transition-colors"
-              >
-                Back to start
-              </button>
-              <button
-                onClick={startRecordingSession}
-                className="bg-brand hover:bg-brand-dark text-white px-10 py-5 rounded-2xl font-medium flex items-center gap-3 transition-all shadow-xl shadow-brand/10"
-              >
-                <Mic size={22} />
-                Start recording
-              </button>
+            <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/80 backdrop-blur-xl border-t border-gray-100 px-8 py-4">
+              <div className="max-w-[1000px] mx-auto flex items-center justify-between">
+                <button
+                  onClick={() => setMeetingData({ title: '', type: '', attendees: [], transcription: [] })}
+                  className="text-gray-400 hover:text-red-500 font-medium px-4 py-2 transition-colors"
+                >
+                  Clear selection
+                </button>
+                <button
+                  onClick={startRecordingSession}
+                  className="bg-brand hover:bg-brand-dark text-white px-10 py-5 rounded-2xl font-medium flex items-center gap-3 transition-all shadow-xl shadow-brand/10"
+                >
+                  <Mic size={22} />
+                  Start recording
+                </button>
+              </div>
             </div>
           </div>
         )
