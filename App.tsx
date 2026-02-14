@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AppStep, MeetingData, Attendee, MEETING_TYPES } from './types';
 import { ALL_ATTENDEES, DEPARTMENTS } from './constants';
-import { Mic, Pause, Play, Square, CheckCircle, ChevronRight, UserPlus, Clock, Calendar, MessageSquare, LogOut, User, Loader2, Copy, Check, X, AlertTriangle, XCircle, Zap, Plus, Trash2 } from 'lucide-react';
+import { Mic, Pause, Play, Square, CheckCircle, ChevronRight, UserPlus, Clock, Calendar, MessageSquare, LogOut, User, Loader2, Copy, Check, X, AlertTriangle, XCircle, Zap, Plus, Trash2, Pencil } from 'lucide-react';
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { onAuthStateChanged, User as FirebaseUser, signOut } from 'firebase/auth';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
@@ -71,6 +71,7 @@ const App: React.FC = () => {
     } catch { return []; }
   });
   const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [templateForm, setTemplateForm] = useState({ name: '', title: '', type: '', attendeeIds: [] as string[] });
 
   const saveTemplates = (templates: MeetingTemplate[]) => {
@@ -80,15 +81,23 @@ const App: React.FC = () => {
 
   const handleSaveTemplate = () => {
     if (!templateForm.name.trim()) return;
-    const newTemplate: MeetingTemplate = {
-      id: Date.now().toString(),
-      name: templateForm.name.trim(),
-      title: templateForm.title.trim(),
-      type: templateForm.type,
-      attendeeIds: templateForm.attendeeIds,
-    };
-    saveTemplates([...customTemplates, newTemplate]);
+    if (editingTemplateId) {
+      // Update existing
+      saveTemplates(customTemplates.map(t => t.id === editingTemplateId ? {
+        ...t, name: templateForm.name.trim(), title: templateForm.title.trim(),
+        type: templateForm.type, attendeeIds: templateForm.attendeeIds,
+      } : t));
+    } else {
+      // Create new
+      const newTemplate: MeetingTemplate = {
+        id: Date.now().toString(), name: templateForm.name.trim(),
+        title: templateForm.title.trim(), type: templateForm.type,
+        attendeeIds: templateForm.attendeeIds,
+      };
+      saveTemplates([...customTemplates, newTemplate]);
+    }
     setTemplateForm({ name: '', title: '', type: '', attendeeIds: [] });
+    setEditingTemplateId(null);
     setShowTemplateModal(false);
   };
 
@@ -704,20 +713,29 @@ ${transcriptionText}
                       <Zap size={14} />
                       {tmpl.name}
                     </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleDeleteTemplate(tmpl.id); }}
-                      className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
-                      title="Delete template"
-                    >
-                      <X size={10} />
-                    </button>
+                    <div className="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setEditingTemplateId(tmpl.id); setTemplateForm({ name: tmpl.name, title: tmpl.title, type: tmpl.type, attendeeIds: tmpl.attendeeIds }); setShowTemplateModal(true); }}
+                        className="w-5 h-5 bg-blue-500 text-white rounded-full flex items-center justify-center shadow-sm"
+                        title="Edit template"
+                      >
+                        <Pencil size={9} />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDeleteTemplate(tmpl.id); }}
+                        className="w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center shadow-sm"
+                        title="Delete template"
+                      >
+                        <X size={10} />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
 
               {/* Add template button */}
               <button
-                onClick={() => { setTemplateForm({ name: '', title: '', type: '', attendeeIds: [] }); setShowTemplateModal(true); }}
+                onClick={() => { setEditingTemplateId(null); setTemplateForm({ name: '', title: '', type: '', attendeeIds: [] }); setShowTemplateModal(true); }}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-dashed border-gray-300 text-sm font-medium text-gray-400 hover:border-brand/40 hover:text-brand transition-colors"
               >
                 <Plus size={14} />
@@ -731,8 +749,8 @@ ${transcriptionText}
                 <div className="bg-white rounded-3xl shadow-2xl max-w-[600px] w-full max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                   <div className="p-8 space-y-6">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-2xl font-medium">Create template</h3>
-                      <button onClick={() => setShowTemplateModal(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                      <h3 className="text-2xl font-medium">{editingTemplateId ? 'Edit template' : 'Create template'}</h3>
+                      <button onClick={() => { setShowTemplateModal(false); setEditingTemplateId(null); }} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
                         <X size={20} />
                       </button>
                     </div>
@@ -812,20 +830,31 @@ ${transcriptionText}
                       </div>
                     </div>
 
-                    <div className="flex justify-end gap-3 pt-2">
-                      <button
-                        onClick={() => setShowTemplateModal(false)}
-                        className="px-6 py-3 rounded-xl text-gray-500 hover:bg-gray-100 font-medium transition-colors"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleSaveTemplate}
-                        disabled={!templateForm.name.trim()}
-                        className="px-6 py-3 rounded-xl bg-brand text-white font-medium hover:bg-brand-dark transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        Save template
-                      </button>
+                    <div className="flex justify-between gap-3 pt-2">
+                      {editingTemplateId && (
+                        <button
+                          onClick={() => { handleDeleteTemplate(editingTemplateId); setShowTemplateModal(false); setEditingTemplateId(null); }}
+                          className="px-6 py-3 rounded-xl text-red-500 hover:bg-red-50 font-medium transition-colors flex items-center gap-2"
+                        >
+                          <Trash2 size={16} />
+                          Delete
+                        </button>
+                      )}
+                      <div className="flex gap-3 ml-auto">
+                        <button
+                          onClick={() => { setShowTemplateModal(false); setEditingTemplateId(null); }}
+                          className="px-6 py-3 rounded-xl text-gray-500 hover:bg-gray-100 font-medium transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleSaveTemplate}
+                          disabled={!templateForm.name.trim()}
+                          className="px-6 py-3 rounded-xl bg-brand text-white font-medium hover:bg-brand-dark transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {editingTemplateId ? 'Update template' : 'Save template'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
