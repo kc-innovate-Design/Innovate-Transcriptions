@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AppStep, MeetingData, Attendee, MEETING_TYPES } from './types';
 import { ALL_ATTENDEES, DEPARTMENTS } from './constants';
-import { Mic, Pause, Play, Square, CheckCircle, ChevronRight, UserPlus, Clock, Calendar, MessageSquare, LogOut, User, Loader2, Copy, Check, X, AlertTriangle, XCircle, Zap } from 'lucide-react';
+import { Mic, Pause, Play, Square, CheckCircle, ChevronRight, UserPlus, Clock, Calendar, MessageSquare, LogOut, User, Loader2, Copy, Check, X, AlertTriangle, XCircle, Zap, Plus, Trash2 } from 'lucide-react';
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { onAuthStateChanged, User as FirebaseUser, signOut } from 'firebase/auth';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
@@ -55,6 +55,69 @@ const App: React.FC = () => {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const summaryTextRef = useRef<string>('');
+
+  // Custom meeting templates
+  interface MeetingTemplate {
+    id: string;
+    name: string;
+    title: string;
+    type: string;
+    attendeeIds: string[];
+  }
+  const [customTemplates, setCustomTemplates] = useState<MeetingTemplate[]>(() => {
+    try {
+      const stored = localStorage.getItem('meetingTemplates');
+      return stored ? JSON.parse(stored) : [];
+    } catch { return []; }
+  });
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [templateForm, setTemplateForm] = useState({ name: '', title: '', type: '', attendeeIds: [] as string[] });
+
+  const saveTemplates = (templates: MeetingTemplate[]) => {
+    setCustomTemplates(templates);
+    localStorage.setItem('meetingTemplates', JSON.stringify(templates));
+  };
+
+  const handleSaveTemplate = () => {
+    if (!templateForm.name.trim()) return;
+    const newTemplate: MeetingTemplate = {
+      id: Date.now().toString(),
+      name: templateForm.name.trim(),
+      title: templateForm.title.trim(),
+      type: templateForm.type,
+      attendeeIds: templateForm.attendeeIds,
+    };
+    saveTemplates([...customTemplates, newTemplate]);
+    setTemplateForm({ name: '', title: '', type: '', attendeeIds: [] });
+    setShowTemplateModal(false);
+  };
+
+  const handleDeleteTemplate = (id: string) => {
+    saveTemplates(customTemplates.filter(t => t.id !== id));
+  };
+
+  const applyTemplate = (template: MeetingTemplate) => {
+    const templateAttendees = ALL_ATTENDEES.filter(a => template.attendeeIds.includes(a.id));
+    const allSelected = templateAttendees.every(m => meetingData.attendees.some(a => a.id === m.id));
+    if (allSelected && templateAttendees.length > 0) {
+      const ids = new Set(template.attendeeIds);
+      setMeetingData(prev => ({
+        ...prev,
+        title: prev.title === template.title ? '' : prev.title,
+        type: prev.type === template.type ? '' : prev.type,
+        attendees: prev.attendees.filter(a => !ids.has(a.id)),
+      }));
+    } else {
+      const currentIds = new Set(meetingData.attendees.map(a => a.id));
+      const merged = [...meetingData.attendees, ...templateAttendees.filter(m => !currentIds.has(m.id))];
+      setMeetingData(prev => ({
+        ...prev,
+        title: prev.title || template.title,
+        type: prev.type || template.type,
+        attendees: merged,
+      }));
+    }
+  };
 
   // Refs to avoid stale closures in audio callbacks
   const isRecordingRef = useRef(false);
@@ -627,7 +690,147 @@ ${transcriptionText}
                   </button>
                 );
               })()}
+
+              {/* Custom templates */}
+              {customTemplates.map(tmpl => {
+                const tmplAttendees = ALL_ATTENDEES.filter(a => tmpl.attendeeIds.includes(a.id));
+                const allSelected = tmplAttendees.length > 0 && tmplAttendees.every(m => meetingData.attendees.some(a => a.id === m.id));
+                return (
+                  <div key={tmpl.id} className="relative group">
+                    <button
+                      onClick={() => applyTemplate(tmpl)}
+                      className={`flex items-center gap-2 px-5 py-2.5 rounded-xl border text-sm font-medium transition-colors ${allSelected ? 'bg-brand border-brand text-white' : 'border-brand/20 bg-brand/5 text-brand hover:bg-brand/10'}`}
+                    >
+                      <Zap size={14} />
+                      {tmpl.name}
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDeleteTemplate(tmpl.id); }}
+                      className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                      title="Delete template"
+                    >
+                      <X size={10} />
+                    </button>
+                  </div>
+                );
+              })}
+
+              {/* Add template button */}
+              <button
+                onClick={() => { setTemplateForm({ name: '', title: '', type: '', attendeeIds: [] }); setShowTemplateModal(true); }}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-dashed border-gray-300 text-sm font-medium text-gray-400 hover:border-brand/40 hover:text-brand transition-colors"
+              >
+                <Plus size={14} />
+                Create template
+              </button>
             </div>
+
+            {/* Template Creation Modal */}
+            {showTemplateModal && (
+              <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowTemplateModal(false)}>
+                <div className="bg-white rounded-3xl shadow-2xl max-w-[600px] w-full max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                  <div className="p-8 space-y-6">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-2xl font-medium">Create template</h3>
+                      <button onClick={() => setShowTemplateModal(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                        <X size={20} />
+                      </button>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-gray-600">Template name *</label>
+                        <input
+                          type="text"
+                          value={templateForm.name}
+                          onChange={e => setTemplateForm(prev => ({ ...prev, name: e.target.value }))}
+                          placeholder="e.g. Weekly Standup"
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all bg-white"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-gray-600">Meeting title</label>
+                          <input
+                            type="text"
+                            value={templateForm.title}
+                            onChange={e => setTemplateForm(prev => ({ ...prev, title: e.target.value }))}
+                            placeholder="Auto-fill title"
+                            className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all bg-white"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-gray-600">Meeting type</label>
+                          <select
+                            value={templateForm.type}
+                            onChange={e => setTemplateForm(prev => ({ ...prev, type: e.target.value }))}
+                            className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all appearance-none bg-white"
+                          >
+                            <option value="">Select type...</option>
+                            {MEETING_TYPES.map(type => (
+                              <option key={type} value={type}>{type}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center">
+                          <label className="text-sm font-medium text-gray-600">Attendees</label>
+                          <span className="text-xs text-gray-400">{templateForm.attendeeIds.length} selected</span>
+                        </div>
+                        <div className="max-h-[280px] overflow-y-auto space-y-4 border border-gray-100 rounded-xl p-4">
+                          {DEPARTMENTS.map(dept => {
+                            const deptAttendees = ALL_ATTENDEES.filter(a => a.department === dept);
+                            return (
+                              <div key={dept}>
+                                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{dept}</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {deptAttendees.map(att => {
+                                    const isSelected = templateForm.attendeeIds.includes(att.id);
+                                    return (
+                                      <button
+                                        key={att.id}
+                                        onClick={() => setTemplateForm(prev => ({
+                                          ...prev,
+                                          attendeeIds: isSelected
+                                            ? prev.attendeeIds.filter(id => id !== att.id)
+                                            : [...prev.attendeeIds, att.id]
+                                        }))}
+                                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${isSelected ? 'bg-brand text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                      >
+                                        {att.name}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end gap-3 pt-2">
+                      <button
+                        onClick={() => setShowTemplateModal(false)}
+                        className="px-6 py-3 rounded-xl text-gray-500 hover:bg-gray-100 font-medium transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSaveTemplate}
+                        disabled={!templateForm.name.trim()}
+                        className="px-6 py-3 rounded-xl bg-brand text-white font-medium hover:bg-brand-dark transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        Save template
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-10">
               <div className="flex justify-between items-end border-b border-gray-100 pb-4">
