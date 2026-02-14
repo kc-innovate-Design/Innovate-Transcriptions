@@ -589,26 +589,50 @@ ${transcriptionText}
 
               {/* Meeting Presets */}
               <div className="flex flex-wrap gap-3">
-                <button
-                  onClick={() => {
-                    const icMembers = ALL_ATTENDEES.filter(a => a.department === 'Innovation Coaches');
-                    setMeetingData(prev => ({ ...prev, title: prev.title || 'IC Team Meeting', attendees: icMembers }));
-                  }}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-brand/20 bg-brand/5 text-brand text-sm font-medium hover:bg-brand/10 transition-colors"
-                >
-                  <Zap size={14} />
-                  IC Team Meeting
-                </button>
-                <button
-                  onClick={() => {
-                    const designMembers = ALL_ATTENDEES.filter(a => a.department === 'Designer');
-                    setMeetingData(prev => ({ ...prev, title: prev.title || 'Designer Team Meeting', attendees: designMembers }));
-                  }}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-brand/20 bg-brand/5 text-brand text-sm font-medium hover:bg-brand/10 transition-colors"
-                >
-                  <Zap size={14} />
-                  Designer Team Meeting
-                </button>
+                {(() => {
+                  const icMembers = ALL_ATTENDEES.filter(a => a.department === 'Innovation Coaches');
+                  const allIcSelected = icMembers.every(m => meetingData.attendees.some(a => a.id === m.id));
+                  return (
+                    <button
+                      onClick={() => {
+                        if (allIcSelected) {
+                          const icIds = new Set(icMembers.map(m => m.id));
+                          setMeetingData(prev => ({ ...prev, title: prev.title === 'IC Team Meeting' ? '' : prev.title, attendees: prev.attendees.filter(a => !icIds.has(a.id)) }));
+                        } else {
+                          const currentIds = new Set(meetingData.attendees.map(a => a.id));
+                          const merged = [...meetingData.attendees, ...icMembers.filter(m => !currentIds.has(m.id))];
+                          setMeetingData(prev => ({ ...prev, title: prev.title || 'IC Team Meeting', attendees: merged }));
+                        }
+                      }}
+                      className={`flex items-center gap-2 px-5 py-2.5 rounded-xl border text-sm font-medium transition-colors ${allIcSelected ? 'bg-brand border-brand text-white' : 'border-brand/20 bg-brand/5 text-brand hover:bg-brand/10'}`}
+                    >
+                      <Zap size={14} />
+                      IC Team Meeting
+                    </button>
+                  );
+                })()}
+                {(() => {
+                  const designMembers = ALL_ATTENDEES.filter(a => a.department === 'Designer');
+                  const allDesignSelected = designMembers.every(m => meetingData.attendees.some(a => a.id === m.id));
+                  return (
+                    <button
+                      onClick={() => {
+                        if (allDesignSelected) {
+                          const designIds = new Set(designMembers.map(m => m.id));
+                          setMeetingData(prev => ({ ...prev, title: prev.title === 'Designer Team Meeting' ? '' : prev.title, attendees: prev.attendees.filter(a => !designIds.has(a.id)) }));
+                        } else {
+                          const currentIds = new Set(meetingData.attendees.map(a => a.id));
+                          const merged = [...meetingData.attendees, ...designMembers.filter(m => !currentIds.has(m.id))];
+                          setMeetingData(prev => ({ ...prev, title: prev.title || 'Designer Team Meeting', attendees: merged }));
+                        }
+                      }}
+                      className={`flex items-center gap-2 px-5 py-2.5 rounded-xl border text-sm font-medium transition-colors ${allDesignSelected ? 'bg-brand border-brand text-white' : 'border-brand/20 bg-brand/5 text-brand hover:bg-brand/10'}`}
+                    >
+                      <Zap size={14} />
+                      Designer Team Meeting
+                    </button>
+                  );
+                })()}
               </div>
 
               {renderAttendeeGroup("Innovation Coaches")}
@@ -638,206 +662,211 @@ ${transcriptionText}
               </button>
             </div>
           </div>
-        )}
+        )
+        }
 
-        {step === AppStep.RECORDING && (
-          <>
-            <div className={`py-16 max-w-[1000px] w-full px-8 space-y-8 transition-all duration-300 ${stepTransition === 'exiting' ? 'opacity-0 scale-95' : stepTransition === 'entering' ? 'opacity-0 scale-[0.95] animate-[fadeScaleIn_0.4s_ease-out_forwards]' : 'opacity-100'}`}>
-              <div className="bg-white rounded-[2rem] border border-gray-100 p-12 shadow-sm space-y-12 relative overflow-hidden">
-                <div className={`absolute top-0 left-0 w-full h-1.5 ${isPaused ? 'bg-amber-400' : 'bg-brand animate-pulse'}`}></div>
+        {
+          step === AppStep.RECORDING && (
+            <>
+              <div className={`py-16 max-w-[1000px] w-full px-8 space-y-8 transition-all duration-300 ${stepTransition === 'exiting' ? 'opacity-0 scale-95' : stepTransition === 'entering' ? 'opacity-0 scale-[0.95] animate-[fadeScaleIn_0.4s_ease-out_forwards]' : 'opacity-100'}`}>
+                <div className="bg-white rounded-[2rem] border border-gray-100 p-12 shadow-sm space-y-12 relative overflow-hidden">
+                  <div className={`absolute top-0 left-0 w-full h-1.5 ${isPaused ? 'bg-amber-400' : 'bg-brand animate-pulse'}`}></div>
 
-                <div className="flex justify-between items-start">
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-brand font-medium mb-2 uppercase tracking-widest text-xs">
-                      <span className={`w-2.5 h-2.5 rounded-full ${connectionStatus === 'disconnected' ? 'bg-red-700' : isPaused ? 'bg-amber-400' : 'bg-red-500 animate-pulse'}`}></span>
-                      {connectionStatus === 'disconnected' ? 'Connection lost — transcription may have stopped' : isPaused ? 'Recording paused' : 'Live recording...'}
-                    </div>
-                    <h2 className="text-4xl font-medium tracking-tight text-primary">{meetingData.title || 'Untitled meeting'}</h2>
-                    <p className="text-gray-400 text-lg">{meetingData.type || 'Standard meeting'}</p>
-                  </div>
-                  <div className="text-right space-y-2">
-                    <div className="text-sm font-medium text-gray-400 flex items-center justify-end gap-2 uppercase tracking-widest">
-                      <Calendar size={14} />
-                      {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
-                    </div>
-                    <div className="text-sm font-medium text-gray-400 flex items-center justify-end gap-2">
-                      <Clock size={14} />
-                      {new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-center py-8">
-                  <div className="text-8xl font-light tracking-tighter tabular-nums text-primary">
-                    {formatTime(recordingTime)}
-                  </div>
-                </div>
-
-                {/* Audio Visualiser */}
-                <div className="flex items-end justify-center gap-[3px] h-16 px-4">
-                  {audioLevels.map((level, i) => (
-                    <div
-                      key={i}
-                      className="rounded-full transition-all duration-75"
-                      style={{
-                        width: '6px',
-                        height: `${Math.max(4, (isPaused ? 0.05 : level) * 64)}px`,
-                        backgroundColor: isPaused ? '#d1d5db' : level > 0.6 ? '#F36D5B' : level > 0.3 ? '#fb923c' : '#e5e7eb',
-                        opacity: isPaused ? 0.4 : 0.5 + level * 0.5,
-                      }}
-                    />
-                  ))}
-                </div>
-
-                <div className="space-y-4">
-                  <h3 className="text-xs font-semibold uppercase tracking-widest text-gray-400">Live transcription</h3>
-                  <div ref={transcriptionContainerRef} className="bg-gray-50/50 rounded-3xl p-8 h-[350px] overflow-y-auto font-light text-xl leading-relaxed scroll-smooth border border-gray-100">
-                    {meetingData.transcription.length === 0 ? (
-                      <div className="h-full flex items-center justify-center text-gray-300 italic">
-                        Waiting for speech...
+                  <div className="flex justify-between items-start">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-brand font-medium mb-2 uppercase tracking-widest text-xs">
+                        <span className={`w-2.5 h-2.5 rounded-full ${connectionStatus === 'disconnected' ? 'bg-red-700' : isPaused ? 'bg-amber-400' : 'bg-red-500 animate-pulse'}`}></span>
+                        {connectionStatus === 'disconnected' ? 'Connection lost — transcription may have stopped' : isPaused ? 'Recording paused' : 'Live recording...'}
                       </div>
-                    ) : (
-                      <p className="text-primary/80 whitespace-pre-wrap">{meetingData.transcription.join('')}</p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-center gap-6 pt-4">
-                  <button
-                    onClick={cancelRecording}
-                    className="flex items-center gap-2 px-6 py-5 rounded-2xl font-medium transition-all text-lg text-gray-400 hover:text-red-500 hover:bg-red-50"
-                  >
-                    <XCircle size={22} />
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => setIsPaused(!isPaused)}
-                    className={`flex items-center gap-2 px-10 py-5 rounded-2xl font-medium transition-all text-lg ${isPaused
-                      ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
-                  >
-                    {isPaused ? <Play size={22} /> : <Pause size={22} />}
-                    {isPaused ? 'Continue recording' : 'Pause recording'}
-                  </button>
-                  <button
-                    onClick={handleFinishClick}
-                    className="bg-brand hover:bg-brand-dark text-white px-10 py-5 rounded-2xl font-medium flex items-center gap-2 shadow-xl shadow-brand/10 text-lg"
-                  >
-                    <Square size={22} />
-                    Finish recording
-                  </button>
-                </div>
-              </div>
-
-              <div className="bg-brand/5 rounded-3xl p-8 flex items-center gap-5 border border-brand/10">
-                <div className="w-12 h-12 bg-brand/10 rounded-2xl flex items-center justify-center text-brand shrink-0">
-                  <UserPlus size={24} />
-                </div>
-                <div className="text-lg text-primary/80">
-                  <span className="font-semibold">{meetingData.attendees.length} team members</span> will receive the transcription via email.
-                </div>
-              </div>
-            </div>
-
-            {/* Finish Confirmation Modal */}
-            {showFinishConfirm && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]">
-                <div className="bg-white rounded-3xl p-10 max-w-md w-full mx-4 shadow-2xl space-y-6 animate-[fadeScaleIn_0.3s_ease-out]">
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-500 shrink-0">
-                      <AlertTriangle size={28} />
+                      <h2 className="text-4xl font-medium tracking-tight text-primary">{meetingData.title || 'Untitled meeting'}</h2>
+                      <p className="text-gray-400 text-lg">{meetingData.type || 'Standard meeting'}</p>
                     </div>
-                    <div>
-                      <h3 className="text-xl font-semibold text-primary">Finish recording?</h3>
-                      <p className="text-gray-500 mt-1">This will stop the transcription and send emails to all selected attendees.</p>
+                    <div className="text-right space-y-2">
+                      <div className="text-sm font-medium text-gray-400 flex items-center justify-end gap-2 uppercase tracking-widest">
+                        <Calendar size={14} />
+                        {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
+                      </div>
+                      <div className="text-sm font-medium text-gray-400 flex items-center justify-end gap-2">
+                        <Clock size={14} />
+                        {new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                      </div>
                     </div>
                   </div>
-                  <div className="flex gap-3 pt-2">
+
+                  <div className="flex items-center justify-center py-8">
+                    <div className="text-8xl font-light tracking-tighter tabular-nums text-primary">
+                      {formatTime(recordingTime)}
+                    </div>
+                  </div>
+
+                  {/* Audio Visualiser */}
+                  <div className="flex items-end justify-center gap-[3px] h-16 px-4">
+                    {audioLevels.map((level, i) => (
+                      <div
+                        key={i}
+                        className="rounded-full transition-all duration-75"
+                        style={{
+                          width: '6px',
+                          height: `${Math.max(4, (isPaused ? 0.05 : level) * 64)}px`,
+                          backgroundColor: isPaused ? '#d1d5db' : level > 0.6 ? '#F36D5B' : level > 0.3 ? '#fb923c' : '#e5e7eb',
+                          opacity: isPaused ? 0.4 : 0.5 + level * 0.5,
+                        }}
+                      />
+                    ))}
+                  </div>
+
+                  <div className="space-y-4">
+                    <h3 className="text-xs font-semibold uppercase tracking-widest text-gray-400">Live transcription</h3>
+                    <div ref={transcriptionContainerRef} className="bg-gray-50/50 rounded-3xl p-8 h-[350px] overflow-y-auto font-light text-xl leading-relaxed scroll-smooth border border-gray-100">
+                      {meetingData.transcription.length === 0 ? (
+                        <div className="h-full flex items-center justify-center text-gray-300 italic">
+                          Waiting for speech...
+                        </div>
+                      ) : (
+                        <p className="text-primary/80 whitespace-pre-wrap">{meetingData.transcription.join('')}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-center gap-6 pt-4">
                     <button
-                      onClick={() => setShowFinishConfirm(false)}
-                      className="flex-1 px-6 py-4 rounded-2xl border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+                      onClick={cancelRecording}
+                      className="flex items-center gap-2 px-6 py-5 rounded-2xl font-medium transition-all text-lg text-gray-400 hover:text-red-500 hover:bg-red-50"
                     >
-                      <X size={18} />
-                      Keep recording
+                      <XCircle size={22} />
+                      Cancel
                     </button>
                     <button
-                      onClick={finishRecording}
-                      className="flex-1 px-6 py-4 rounded-2xl bg-brand text-white font-medium hover:bg-brand-dark transition-colors flex items-center justify-center gap-2 shadow-lg shadow-brand/20"
+                      onClick={() => setIsPaused(!isPaused)}
+                      className={`flex items-center gap-2 px-10 py-5 rounded-2xl font-medium transition-all text-lg ${isPaused
+                        ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
                     >
-                      <Square size={18} />
-                      Finish & send
+                      {isPaused ? <Play size={22} /> : <Pause size={22} />}
+                      {isPaused ? 'Continue recording' : 'Pause recording'}
+                    </button>
+                    <button
+                      onClick={handleFinishClick}
+                      className="bg-brand hover:bg-brand-dark text-white px-10 py-5 rounded-2xl font-medium flex items-center gap-2 shadow-xl shadow-brand/10 text-lg"
+                    >
+                      <Square size={22} />
+                      Finish recording
                     </button>
                   </div>
                 </div>
-              </div>
-            )}
-          </>
-        )}
 
-        {step === AppStep.FINISHED && (
-          <div className={`flex-1 max-w-2xl mx-auto flex flex-col items-center justify-center text-center space-y-10 transition-all duration-300 ${stepTransition === 'exiting' ? 'opacity-0 scale-95' : stepTransition === 'entering' ? 'opacity-0 scale-[0.95] animate-[fadeScaleIn_0.5s_ease-out_forwards]' : 'opacity-100'}`}>
-            <div className="w-32 h-32 bg-green-50 text-green-500 rounded-full flex items-center justify-center mb-4">
-              {saveStatus === 'saving' ? (
-                <Loader2 className="animate-spin" size={64} />
-              ) : (
-                <CheckCircle size={64} />
+                <div className="bg-brand/5 rounded-3xl p-8 flex items-center gap-5 border border-brand/10">
+                  <div className="w-12 h-12 bg-brand/10 rounded-2xl flex items-center justify-center text-brand shrink-0">
+                    <UserPlus size={24} />
+                  </div>
+                  <div className="text-lg text-primary/80">
+                    <span className="font-semibold">{meetingData.attendees.length} team members</span> will receive the transcription via email.
+                  </div>
+                </div>
+              </div>
+
+              {/* Finish Confirmation Modal */}
+              {showFinishConfirm && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]">
+                  <div className="bg-white rounded-3xl p-10 max-w-md w-full mx-4 shadow-2xl space-y-6 animate-[fadeScaleIn_0.3s_ease-out]">
+                    <div className="flex items-center gap-4">
+                      <div className="w-14 h-14 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-500 shrink-0">
+                        <AlertTriangle size={28} />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-semibold text-primary">Finish recording?</h3>
+                        <p className="text-gray-500 mt-1">This will stop the transcription and send emails to all selected attendees.</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-3 pt-2">
+                      <button
+                        onClick={() => setShowFinishConfirm(false)}
+                        className="flex-1 px-6 py-4 rounded-2xl border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <X size={18} />
+                        Keep recording
+                      </button>
+                      <button
+                        onClick={finishRecording}
+                        className="flex-1 px-6 py-4 rounded-2xl bg-brand text-white font-medium hover:bg-brand-dark transition-colors flex items-center justify-center gap-2 shadow-lg shadow-brand/20"
+                      >
+                        <Square size={18} />
+                        Finish & send
+                      </button>
+                    </div>
+                  </div>
+                </div>
               )}
-            </div>
-            <div className="space-y-4">
-              <h2 className="text-5xl font-medium tracking-tight">Recording finished</h2>
-              <p className="text-2xl text-gray-500 leading-relaxed max-w-lg font-light">
-                {saveStatus === 'saving'
-                  ? 'Saving transcription...'
-                  : saveStatus === 'error'
-                    ? 'There was an error saving. The transcription may not have been stored.'
-                    : 'Thank you for recording this meeting, the system will email selected attendees the transcription shortly.'}
-              </p>
-            </div>
+            </>
+          )
+        }
 
-            {/* Copy Buttons */}
-            {saveStatus === 'saved' && (
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => handleCopy(meetingData.transcription.join(''), 'transcript')}
-                  className={`flex items-center gap-2 px-6 py-3 rounded-xl border text-sm font-medium transition-all ${copiedField === 'transcript' ? 'bg-green-50 border-green-200 text-green-600' : 'bg-white border-gray-200 text-gray-600 hover:border-brand/40 hover:text-brand'}`}
-                >
-                  {copiedField === 'transcript' ? <Check size={16} /> : <Copy size={16} />}
-                  {copiedField === 'transcript' ? 'Copied!' : 'Copy transcript'}
-                </button>
-                {summaryTextRef.current && (
-                  <button
-                    onClick={() => handleCopy(summaryTextRef.current, 'summary')}
-                    className={`flex items-center gap-2 px-6 py-3 rounded-xl border text-sm font-medium transition-all ${copiedField === 'summary' ? 'bg-green-50 border-green-200 text-green-600' : 'bg-white border-gray-200 text-gray-600 hover:border-brand/40 hover:text-brand'}`}
-                  >
-                    {copiedField === 'summary' ? <Check size={16} /> : <Copy size={16} />}
-                    {copiedField === 'summary' ? 'Copied!' : 'Copy summary'}
-                  </button>
+        {
+          step === AppStep.FINISHED && (
+            <div className={`flex-1 max-w-2xl mx-auto flex flex-col items-center justify-center text-center space-y-10 transition-all duration-300 ${stepTransition === 'exiting' ? 'opacity-0 scale-95' : stepTransition === 'entering' ? 'opacity-0 scale-[0.95] animate-[fadeScaleIn_0.5s_ease-out_forwards]' : 'opacity-100'}`}>
+              <div className="w-32 h-32 bg-green-50 text-green-500 rounded-full flex items-center justify-center mb-4">
+                {saveStatus === 'saving' ? (
+                  <Loader2 className="animate-spin" size={64} />
+                ) : (
+                  <CheckCircle size={64} />
                 )}
               </div>
-            )}
+              <div className="space-y-4">
+                <h2 className="text-5xl font-medium tracking-tight">Recording finished</h2>
+                <p className="text-2xl text-gray-500 leading-relaxed max-w-lg font-light">
+                  {saveStatus === 'saving'
+                    ? 'Saving transcription...'
+                    : saveStatus === 'error'
+                      ? 'There was an error saving. The transcription may not have been stored.'
+                      : 'Thank you for recording this meeting, the system will email selected attendees the transcription shortly.'}
+                </p>
+              </div>
 
-            <div className="pt-8">
-              <button
-                onClick={handleReset}
-                className="bg-brand hover:bg-brand-dark text-white px-12 py-6 rounded-2xl text-xl font-medium transition-all flex items-center gap-3 shadow-2xl shadow-brand/20"
-              >
-                Start new meeting
-                <ChevronRight size={24} />
-              </button>
-            </div>
+              {/* Copy Buttons */}
+              {saveStatus === 'saved' && (
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => handleCopy(meetingData.transcription.join(''), 'transcript')}
+                    className={`flex items-center gap-2 px-6 py-3 rounded-xl border text-sm font-medium transition-all ${copiedField === 'transcript' ? 'bg-green-50 border-green-200 text-green-600' : 'bg-white border-gray-200 text-gray-600 hover:border-brand/40 hover:text-brand'}`}
+                  >
+                    {copiedField === 'transcript' ? <Check size={16} /> : <Copy size={16} />}
+                    {copiedField === 'transcript' ? 'Copied!' : 'Copy transcript'}
+                  </button>
+                  {summaryTextRef.current && (
+                    <button
+                      onClick={() => handleCopy(summaryTextRef.current, 'summary')}
+                      className={`flex items-center gap-2 px-6 py-3 rounded-xl border text-sm font-medium transition-all ${copiedField === 'summary' ? 'bg-green-50 border-green-200 text-green-600' : 'bg-white border-gray-200 text-gray-600 hover:border-brand/40 hover:text-brand'}`}
+                    >
+                      {copiedField === 'summary' ? <Check size={16} /> : <Copy size={16} />}
+                      {copiedField === 'summary' ? 'Copied!' : 'Copy summary'}
+                    </button>
+                  )}
+                </div>
+              )}
 
-            <div className="pt-20">
-              <p className="text-sm text-gray-300 font-medium">
-                Returning home in <span className="text-brand tabular-nums">10</span> seconds...
-              </p>
-              <div className="mt-4 w-64 h-1.5 bg-gray-100 rounded-full overflow-hidden mx-auto">
-                <div className="h-full bg-brand animate-[progress_10s_linear]"></div>
+              <div className="pt-8">
+                <button
+                  onClick={handleReset}
+                  className="bg-brand hover:bg-brand-dark text-white px-12 py-6 rounded-2xl text-xl font-medium transition-all flex items-center gap-3 shadow-2xl shadow-brand/20"
+                >
+                  Start new meeting
+                  <ChevronRight size={24} />
+                </button>
+              </div>
+
+              <div className="pt-20">
+                <p className="text-sm text-gray-300 font-medium">
+                  Returning home in <span className="text-brand tabular-nums">10</span> seconds...
+                </p>
+                <div className="mt-4 w-64 h-1.5 bg-gray-100 rounded-full overflow-hidden mx-auto">
+                  <div className="h-full bg-brand animate-[progress_10s_linear]"></div>
+                </div>
               </div>
             </div>
-          </div>
-        )}
-      </main>
+          )
+        }
+      </main >
 
       <style>{`
         @keyframes progress {
@@ -857,7 +886,7 @@ ${transcriptionText}
           to { opacity: 1; }
         }
       `}</style>
-    </div>
+    </div >
   );
 };
 
