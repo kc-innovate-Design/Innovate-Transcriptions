@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AppStep, MeetingData, Attendee, MEETING_TYPES } from './types';
 import { ALL_ATTENDEES, DEPARTMENTS } from './constants';
-import { Mic, Pause, Play, Square, CheckCircle, ChevronRight, UserPlus, Clock, Calendar, MessageSquare, LogOut, User, Loader2, Copy, Check, X, AlertTriangle } from 'lucide-react';
+import { Mic, Pause, Play, Square, CheckCircle, ChevronRight, UserPlus, Clock, Calendar, MessageSquare, LogOut, User, Loader2, Copy, Check, X, AlertTriangle, XCircle, Zap } from 'lucide-react';
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { onAuthStateChanged, User as FirebaseUser, signOut } from 'firebase/auth';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
@@ -325,6 +325,16 @@ const App: React.FC = () => {
     }
   };
 
+  const cancelRecording = () => {
+    cleanupSession();
+    if (audioStream) {
+      audioStream.getTracks().forEach(track => track.stop());
+    }
+    setIsRecording(false);
+    setAudioStream(null);
+    transitionToStep(AppStep.DETAILS);
+  };
+
   const handleFinishClick = () => {
     setShowFinishConfirm(true);
   };
@@ -577,6 +587,30 @@ ${transcriptionText}
                 <span className="text-sm text-gray-400 font-medium">{meetingData.attendees.length} selected</span>
               </div>
 
+              {/* Meeting Presets */}
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={() => {
+                    const icMembers = ALL_ATTENDEES.filter(a => a.department === 'Innovation Coaches');
+                    setMeetingData(prev => ({ ...prev, title: prev.title || 'IC Team Meeting', attendees: icMembers }));
+                  }}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-brand/20 bg-brand/5 text-brand text-sm font-medium hover:bg-brand/10 transition-colors"
+                >
+                  <Zap size={14} />
+                  IC Team Meeting
+                </button>
+                <button
+                  onClick={() => {
+                    const designMembers = ALL_ATTENDEES.filter(a => a.department === 'Designer');
+                    setMeetingData(prev => ({ ...prev, title: prev.title || 'Designer Team Meeting', attendees: designMembers }));
+                  }}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-brand/20 bg-brand/5 text-brand text-sm font-medium hover:bg-brand/10 transition-colors"
+                >
+                  <Zap size={14} />
+                  Designer Team Meeting
+                </button>
+              </div>
+
               {renderAttendeeGroup("Innovation Coaches")}
               {renderAttendeeGroup("Designer")}
 
@@ -669,6 +703,13 @@ ${transcriptionText}
                 </div>
 
                 <div className="flex items-center justify-center gap-6 pt-4">
+                  <button
+                    onClick={cancelRecording}
+                    className="flex items-center gap-2 px-6 py-5 rounded-2xl font-medium transition-all text-lg text-gray-400 hover:text-red-500 hover:bg-red-50"
+                  >
+                    <XCircle size={22} />
+                    Cancel
+                  </button>
                   <button
                     onClick={() => setIsPaused(!isPaused)}
                     className={`flex items-center gap-2 px-10 py-5 rounded-2xl font-medium transition-all text-lg ${isPaused
