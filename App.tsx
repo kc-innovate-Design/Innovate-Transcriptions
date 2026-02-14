@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AppStep, MeetingData, Attendee, MEETING_TYPES } from './types';
 import { ALL_ATTENDEES, DEPARTMENTS } from './constants';
-import { Mic, Pause, Play, Square, CheckCircle, ChevronRight, UserPlus, Clock, Calendar, MessageSquare, LogOut, User, Loader2, Copy, Check, X, AlertTriangle, XCircle, Zap, Plus, Trash2, Pencil } from 'lucide-react';
+import { Mic, Pause, Play, Square, CheckCircle, ChevronRight, UserPlus, Clock, Calendar, MessageSquare, LogOut, User, Loader2, Copy, Check, X, AlertTriangle, XCircle, Zap, Plus, Trash2, Pencil, Settings } from 'lucide-react';
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { onAuthStateChanged, User as FirebaseUser, signOut } from 'firebase/auth';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
@@ -74,6 +74,39 @@ const App: React.FC = () => {
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [templateForm, setTemplateForm] = useState({ name: '', title: '', type: '', attendeeIds: [] as string[] });
 
+  // Dynamic team member management
+  const [teamMembers, setTeamMembers] = useState<Attendee[]>(() => {
+    try {
+      const stored = localStorage.getItem('teamMembers');
+      return stored ? JSON.parse(stored) : ALL_ATTENDEES;
+    } catch { return ALL_ATTENDEES; }
+  });
+  const [showManageTeam, setShowManageTeam] = useState(false);
+  const [addMemberForm, setAddMemberForm] = useState({ name: '', email: '', department: DEPARTMENTS[0] });
+
+  const saveTeamMembers = (members: Attendee[]) => {
+    setTeamMembers(members);
+    localStorage.setItem('teamMembers', JSON.stringify(members));
+  };
+
+  const handleAddMember = () => {
+    if (!addMemberForm.name.trim() || !addMemberForm.email.trim()) return;
+    const newMember: Attendee = {
+      id: Date.now().toString(),
+      name: addMemberForm.name.trim(),
+      email: addMemberForm.email.trim(),
+      department: addMemberForm.department,
+    };
+    saveTeamMembers([...teamMembers, newMember]);
+    setAddMemberForm({ name: '', email: '', department: DEPARTMENTS[0] });
+  };
+
+  const handleRemoveMember = (id: string) => {
+    saveTeamMembers(teamMembers.filter(m => m.id !== id));
+    // Also remove from current meeting selection
+    setMeetingData(prev => ({ ...prev, attendees: prev.attendees.filter(a => a.id !== id) }));
+  };
+
   const saveTemplates = (templates: MeetingTemplate[]) => {
     setCustomTemplates(templates);
     localStorage.setItem('meetingTemplates', JSON.stringify(templates));
@@ -106,7 +139,7 @@ const App: React.FC = () => {
   };
 
   const applyTemplate = (template: MeetingTemplate) => {
-    const templateAttendees = ALL_ATTENDEES.filter(a => template.attendeeIds.includes(a.id));
+    const templateAttendees = teamMembers.filter(a => template.attendeeIds.includes(a.id));
     const allSelected = templateAttendees.every(m => meetingData.attendees.some(a => a.id === m.id));
     if (allSelected && templateAttendees.length > 0) {
       const ids = new Set(template.attendeeIds);
@@ -555,7 +588,7 @@ ${transcriptionText}
     <div className="space-y-4">
       <h4 className="text-xs font-semibold uppercase tracking-widest text-gray-400">{dept}</h4>
       <div className="flex flex-wrap gap-2">
-        {ALL_ATTENDEES.filter(a => a.department === dept).map(attendee => {
+        {teamMembers.filter(a => a.department === dept).map(attendee => {
           const isSelected = meetingData.attendees.some(a => a.id === attendee.id);
           return (
             <button
@@ -656,7 +689,7 @@ ${transcriptionText}
             {/* Meeting Presets */}
             <div className="flex flex-wrap gap-3">
               {(() => {
-                const icMembers = ALL_ATTENDEES.filter(a => a.department === 'Innovation Coaches');
+                const icMembers = teamMembers.filter(a => a.department === 'Innovation Coaches');
                 const allIcSelected = icMembers.every(m => meetingData.attendees.some(a => a.id === m.id));
                 return (
                   <button
@@ -678,7 +711,7 @@ ${transcriptionText}
                 );
               })()}
               {(() => {
-                const designMembers = ALL_ATTENDEES.filter(a => a.department === 'Designer');
+                const designMembers = teamMembers.filter(a => a.department === 'Designer');
                 const allDesignSelected = designMembers.every(m => meetingData.attendees.some(a => a.id === m.id));
                 return (
                   <button
@@ -702,7 +735,7 @@ ${transcriptionText}
 
               {/* Custom templates */}
               {customTemplates.map(tmpl => {
-                const tmplAttendees = ALL_ATTENDEES.filter(a => tmpl.attendeeIds.includes(a.id));
+                const tmplAttendees = teamMembers.filter(a => tmpl.attendeeIds.includes(a.id));
                 const allSelected = tmplAttendees.length > 0 && tmplAttendees.every(m => meetingData.attendees.some(a => a.id === m.id));
                 return (
                   <div key={tmpl.id} className="relative group">
@@ -800,7 +833,7 @@ ${transcriptionText}
                         </div>
                         <div className="max-h-[280px] overflow-y-auto space-y-4 border border-gray-100 rounded-xl p-4">
                           {DEPARTMENTS.map(dept => {
-                            const deptAttendees = ALL_ATTENDEES.filter(a => a.department === dept);
+                            const deptAttendees = teamMembers.filter(a => a.department === dept);
                             return (
                               <div key={dept}>
                                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{dept}</p>
@@ -871,12 +904,96 @@ ${transcriptionText}
               {renderAttendeeGroup("Designer")}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                {renderAttendeeGroup("Administrators")}
                 {renderAttendeeGroup("Business Support")}
+                {renderAttendeeGroup("Administrators")}
               </div>
 
               {renderAttendeeGroup("Researchers and IP")}
             </div>
+
+            {/* Manage Team Modal */}
+            {showManageTeam && (
+              <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowManageTeam(false)}>
+                <div className="bg-white rounded-3xl shadow-2xl max-w-[650px] w-full max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                  <div className="p-8 space-y-6">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-2xl font-medium">Manage team</h3>
+                      <button onClick={() => setShowManageTeam(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                        <X size={20} />
+                      </button>
+                    </div>
+
+                    <div className="space-y-6">
+                      {DEPARTMENTS.map(dept => {
+                        const members = teamMembers.filter(m => m.department === dept);
+                        return (
+                          <div key={dept} className="space-y-2">
+                            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{dept} ({members.length})</p>
+                            <div className="space-y-1">
+                              {members.map(member => (
+                                <div key={member.id} className="flex items-center justify-between group px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors">
+                                  <div className="flex-1 min-w-0">
+                                    <span className="text-sm font-medium text-gray-700">{member.name}</span>
+                                    <span className="text-xs text-gray-400 ml-2 truncate">{member.email}</span>
+                                  </div>
+                                  <button
+                                    onClick={() => handleRemoveMember(member.id)}
+                                    className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                                    title="Remove member"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
+                              ))}
+                              {members.length === 0 && <p className="text-xs text-gray-300 italic px-3 py-2">No members</p>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="border-t border-gray-100 pt-6 space-y-4">
+                      <h4 className="text-sm font-semibold text-gray-600">Add new member</h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        <input
+                          type="text"
+                          value={addMemberForm.name}
+                          onChange={e => setAddMemberForm(prev => ({ ...prev, name: e.target.value }))}
+                          placeholder="Name"
+                          className="px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all"
+                        />
+                        <input
+                          type="email"
+                          value={addMemberForm.email}
+                          onChange={e => setAddMemberForm(prev => ({ ...prev, email: e.target.value }))}
+                          placeholder="Email"
+                          className="px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all"
+                        />
+                      </div>
+                      <div className="flex gap-3">
+                        <select
+                          value={addMemberForm.department}
+                          onChange={e => setAddMemberForm(prev => ({ ...prev, department: e.target.value }))}
+                          className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all appearance-none bg-white"
+                        >
+                          {DEPARTMENTS.map(dept => (
+                            <option key={dept} value={dept}>{dept}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={handleAddMember}
+                          disabled={!addMemberForm.name.trim() || !addMemberForm.email.trim()}
+                          className="px-6 py-2.5 rounded-xl bg-brand text-white text-sm font-medium hover:bg-brand-dark transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+                        >
+                          <Plus size={14} />
+                          Add
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/80 backdrop-blur-xl border-t border-gray-100 px-8 py-4">
               <div className="max-w-[1000px] mx-auto flex items-center justify-between">
@@ -885,6 +1002,13 @@ ${transcriptionText}
                   className="text-gray-400 hover:text-red-500 font-medium px-4 py-2 transition-colors"
                 >
                   Clear selection
+                </button>
+                <button
+                  onClick={() => setShowManageTeam(true)}
+                  className="text-gray-400 hover:text-brand font-medium px-4 py-2 transition-colors flex items-center gap-2"
+                >
+                  <Settings size={16} />
+                  Manage attendees
                 </button>
                 <button
                   onClick={startRecordingSession}
