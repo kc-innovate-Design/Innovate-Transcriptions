@@ -66,8 +66,28 @@ const App: React.FC = () => {
   }
   const [customTemplates, setCustomTemplates] = useState<MeetingTemplate[]>(() => {
     try {
+      const icIds = ALL_ATTENDEES.filter(a => a.department === 'Innovation Coaches').map(a => a.id);
+      const designerIds = ALL_ATTENDEES.filter(a => a.department === 'Designer').map(a => a.id);
+      const defaultPresets: MeetingTemplate[] = [
+        { id: 'preset-ic', name: 'IC Team Meeting', title: 'IC Team Meeting', type: 'Internal - Team meeting', attendeeIds: icIds },
+        { id: 'preset-designer', name: 'Designer Team Meeting', title: 'Designer Team Meeting', type: 'Internal - Team meeting', attendeeIds: designerIds },
+      ];
       const stored = localStorage.getItem('meetingTemplates');
-      return stored ? JSON.parse(stored) : [];
+      if (stored) {
+        const existing: MeetingTemplate[] = JSON.parse(stored);
+        // Migrate: ensure default presets exist
+        const hasIc = existing.some(t => t.id === 'preset-ic');
+        const hasDesigner = existing.some(t => t.id === 'preset-designer');
+        if (!hasIc || !hasDesigner) {
+          const toAdd = defaultPresets.filter(d => !existing.some(e => e.id === d.id));
+          const merged = [...toAdd, ...existing];
+          localStorage.setItem('meetingTemplates', JSON.stringify(merged));
+          return merged;
+        }
+        return existing;
+      }
+      localStorage.setItem('meetingTemplates', JSON.stringify(defaultPresets));
+      return defaultPresets;
     } catch { return []; }
   });
   const [showTemplateModal, setShowTemplateModal] = useState(false);
@@ -688,50 +708,6 @@ ${transcriptionText}
 
             {/* Meeting Presets */}
             <div className="flex flex-wrap gap-3">
-              {(() => {
-                const icMembers = teamMembers.filter(a => a.department === 'Innovation Coaches');
-                const allIcSelected = icMembers.every(m => meetingData.attendees.some(a => a.id === m.id));
-                return (
-                  <button
-                    onClick={() => {
-                      if (allIcSelected) {
-                        const icIds = new Set(icMembers.map(m => m.id));
-                        setMeetingData(prev => ({ ...prev, title: prev.title === 'IC Team Meeting' ? '' : prev.title, type: prev.type === 'Internal - Team meeting' ? '' : prev.type, attendees: prev.attendees.filter(a => !icIds.has(a.id)) }));
-                      } else {
-                        const currentIds = new Set(meetingData.attendees.map(a => a.id));
-                        const merged = [...meetingData.attendees, ...icMembers.filter(m => !currentIds.has(m.id))];
-                        setMeetingData(prev => ({ ...prev, title: prev.title || 'IC Team Meeting', type: prev.type || 'Internal - Team meeting', attendees: merged }));
-                      }
-                    }}
-                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl border text-sm font-medium transition-colors ${allIcSelected ? 'bg-brand border-brand text-white' : 'border-brand/20 bg-brand/5 text-brand hover:bg-brand/10'}`}
-                  >
-                    <Zap size={14} />
-                    IC Team Meeting
-                  </button>
-                );
-              })()}
-              {(() => {
-                const designMembers = teamMembers.filter(a => a.department === 'Designer');
-                const allDesignSelected = designMembers.every(m => meetingData.attendees.some(a => a.id === m.id));
-                return (
-                  <button
-                    onClick={() => {
-                      if (allDesignSelected) {
-                        const designIds = new Set(designMembers.map(m => m.id));
-                        setMeetingData(prev => ({ ...prev, title: prev.title === 'Designer Team Meeting' ? '' : prev.title, type: prev.type === 'Internal - Team meeting' ? '' : prev.type, attendees: prev.attendees.filter(a => !designIds.has(a.id)) }));
-                      } else {
-                        const currentIds = new Set(meetingData.attendees.map(a => a.id));
-                        const merged = [...meetingData.attendees, ...designMembers.filter(m => !currentIds.has(m.id))];
-                        setMeetingData(prev => ({ ...prev, title: prev.title || 'Designer Team Meeting', type: prev.type || 'Internal - Team meeting', attendees: merged }));
-                      }
-                    }}
-                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl border text-sm font-medium transition-colors ${allDesignSelected ? 'bg-brand border-brand text-white' : 'border-brand/20 bg-brand/5 text-brand hover:bg-brand/10'}`}
-                  >
-                    <Zap size={14} />
-                    Designer Team Meeting
-                  </button>
-                );
-              })()}
 
               {/* Custom templates */}
               {customTemplates.map(tmpl => {
@@ -902,12 +878,8 @@ ${transcriptionText}
 
               {renderAttendeeGroup("Innovation Coaches")}
               {renderAttendeeGroup("Designer")}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                {renderAttendeeGroup("Business Support")}
-                {renderAttendeeGroup("Administrators")}
-              </div>
-
+              {renderAttendeeGroup("Business Support")}
+              {renderAttendeeGroup("Administrators")}
               {renderAttendeeGroup("Researchers and IP")}
             </div>
 
