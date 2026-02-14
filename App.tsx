@@ -722,20 +722,13 @@ ${transcriptionText}
                       <Zap size={14} />
                       {tmpl.name}
                     </button>
-                    <div className="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={(e) => { e.stopPropagation(); setEditingTemplateId(tmpl.id); setTemplateForm({ name: tmpl.name, title: tmpl.title, type: tmpl.type, attendeeIds: tmpl.attendeeIds }); setShowTemplateModal(true); }}
                         className="w-5 h-5 bg-blue-500 text-white rounded-full flex items-center justify-center shadow-sm"
                         title="Edit template"
                       >
                         <Pencil size={9} />
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDeleteTemplate(tmpl.id); }}
-                        className="w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center shadow-sm"
-                        title="Delete template"
-                      >
-                        <X size={10} />
                       </button>
                     </div>
                   </div>
