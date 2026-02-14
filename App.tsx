@@ -895,36 +895,7 @@ ${transcriptionText}
                       </button>
                     </div>
 
-                    <div className="space-y-6">
-                      {DEPARTMENTS.map(dept => {
-                        const members = teamMembers.filter(m => m.department === dept);
-                        return (
-                          <div key={dept} className="space-y-2">
-                            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{dept} ({members.length})</p>
-                            <div className="space-y-1">
-                              {members.map(member => (
-                                <div key={member.id} className="flex items-center justify-between group px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors">
-                                  <div className="flex-1 min-w-0">
-                                    <span className="text-sm font-medium text-gray-700">{member.name}</span>
-                                    <span className="text-xs text-gray-400 ml-2 truncate">{member.email}</span>
-                                  </div>
-                                  <button
-                                    onClick={() => handleRemoveMember(member.id)}
-                                    className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
-                                    title="Remove member"
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
-                                </div>
-                              ))}
-                              {members.length === 0 && <p className="text-xs text-gray-300 italic px-3 py-2">No members</p>}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    <div className="border-t border-gray-100 pt-6 space-y-4">
+                    <div className="space-y-4 border-b border-gray-100 pb-6">
                       <h4 className="text-sm font-semibold text-gray-600">Add new member</h4>
                       <div className="grid grid-cols-2 gap-3">
                         <input
@@ -961,6 +932,35 @@ ${transcriptionText}
                           Add
                         </button>
                       </div>
+                    </div>
+
+                    <div className="space-y-6">
+                      {DEPARTMENTS.map(dept => {
+                        const members = teamMembers.filter(m => m.department === dept);
+                        return (
+                          <div key={dept} className="space-y-2">
+                            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{dept} ({members.length})</p>
+                            <div className="space-y-1">
+                              {members.map(member => (
+                                <div key={member.id} className="flex items-center justify-between group px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors">
+                                  <div className="flex-1 min-w-0">
+                                    <span className="text-sm font-medium text-gray-700">{member.name}</span>
+                                    <span className="text-xs text-gray-400 ml-2 truncate">{member.email}</span>
+                                  </div>
+                                  <button
+                                    onClick={() => handleRemoveMember(member.id)}
+                                    className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                                    title="Remove member"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
+                              ))}
+                              {members.length === 0 && <p className="text-xs text-gray-300 italic px-3 py-2">No members</p>}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
