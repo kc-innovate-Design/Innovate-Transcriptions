@@ -696,11 +696,11 @@ ${transcriptionText}
                     onClick={() => {
                       if (allIcSelected) {
                         const icIds = new Set(icMembers.map(m => m.id));
-                        setMeetingData(prev => ({ ...prev, title: prev.title === 'IC Team Meeting' ? '' : prev.title, attendees: prev.attendees.filter(a => !icIds.has(a.id)) }));
+                        setMeetingData(prev => ({ ...prev, title: prev.title === 'IC Team Meeting' ? '' : prev.title, type: prev.type === 'Internal - Team meeting' ? '' : prev.type, attendees: prev.attendees.filter(a => !icIds.has(a.id)) }));
                       } else {
                         const currentIds = new Set(meetingData.attendees.map(a => a.id));
                         const merged = [...meetingData.attendees, ...icMembers.filter(m => !currentIds.has(m.id))];
-                        setMeetingData(prev => ({ ...prev, title: prev.title || 'IC Team Meeting', attendees: merged }));
+                        setMeetingData(prev => ({ ...prev, title: prev.title || 'IC Team Meeting', type: prev.type || 'Internal - Team meeting', attendees: merged }));
                       }
                     }}
                     className={`flex items-center gap-2 px-5 py-2.5 rounded-xl border text-sm font-medium transition-colors ${allIcSelected ? 'bg-brand border-brand text-white' : 'border-brand/20 bg-brand/5 text-brand hover:bg-brand/10'}`}
@@ -718,11 +718,11 @@ ${transcriptionText}
                     onClick={() => {
                       if (allDesignSelected) {
                         const designIds = new Set(designMembers.map(m => m.id));
-                        setMeetingData(prev => ({ ...prev, title: prev.title === 'Designer Team Meeting' ? '' : prev.title, attendees: prev.attendees.filter(a => !designIds.has(a.id)) }));
+                        setMeetingData(prev => ({ ...prev, title: prev.title === 'Designer Team Meeting' ? '' : prev.title, type: prev.type === 'Internal - Team meeting' ? '' : prev.type, attendees: prev.attendees.filter(a => !designIds.has(a.id)) }));
                       } else {
                         const currentIds = new Set(meetingData.attendees.map(a => a.id));
                         const merged = [...meetingData.attendees, ...designMembers.filter(m => !currentIds.has(m.id))];
-                        setMeetingData(prev => ({ ...prev, title: prev.title || 'Designer Team Meeting', attendees: merged }));
+                        setMeetingData(prev => ({ ...prev, title: prev.title || 'Designer Team Meeting', type: prev.type || 'Internal - Team meeting', attendees: merged }));
                       }
                     }}
                     className={`flex items-center gap-2 px-5 py-2.5 rounded-xl border text-sm font-medium transition-colors ${allDesignSelected ? 'bg-brand border-brand text-white' : 'border-brand/20 bg-brand/5 text-brand hover:bg-brand/10'}`}

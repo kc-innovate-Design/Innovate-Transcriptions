@@ -26,6 +26,7 @@ export const MEETING_TYPES = [
   "Client - Design stage kick off",
   "Client - Mid way meeting",
   "Client - Handover meeting",
+  "Internal - Team meeting",
   "Internal - Project review",
   "Internal - Other"
 ];
