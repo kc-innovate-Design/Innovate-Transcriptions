@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AppStep, MeetingData, Attendee, MEETING_TYPES } from './types';
 import { ALL_ATTENDEES, DEPARTMENTS } from './constants';
-import { Mic, Pause, Play, Square, CheckCircle, ChevronRight, UserPlus, Clock, Calendar, MessageSquare, LogOut, User, Loader2 } from 'lucide-react';
+import { Mic, Pause, Play, Square, CheckCircle, ChevronRight, UserPlus, Clock, Calendar, MessageSquare, LogOut, User, Loader2, Copy, Check, X, AlertTriangle } from 'lucide-react';
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { onAuthStateChanged, User as FirebaseUser, signOut } from 'firebase/auth';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
@@ -48,6 +48,13 @@ const App: React.FC = () => {
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'reconnecting'>('connected');
+  const [showFinishConfirm, setShowFinishConfirm] = useState(false);
+  const [copiedField, setCopiedField] = useState<'transcript' | 'summary' | null>(null);
+  const [audioLevels, setAudioLevels] = useState<number[]>(new Array(32).fill(0));
+  const [stepTransition, setStepTransition] = useState<'entering' | 'exiting' | 'idle'>('idle');
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const summaryTextRef = useRef<string>('');
 
   // Refs to avoid stale closures in audio callbacks
   const isRecordingRef = useRef(false);
@@ -132,11 +139,28 @@ const App: React.FC = () => {
       flushTimerRef.current = null;
     }
     flushTranscriptBuffer();
+    // Stop audio visualiser
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    analyserRef.current = null;
+    setAudioLevels(new Array(32).fill(0));
+  };
+
+  // Animated step transition
+  const transitionToStep = (newStep: AppStep) => {
+    setStepTransition('exiting');
+    setTimeout(() => {
+      setStep(newStep);
+      setStepTransition('entering');
+      setTimeout(() => setStepTransition('idle'), 400);
+    }, 250);
   };
 
   const handleReset = () => {
     cleanupSession();
-    setStep(AppStep.HOME);
+    transitionToStep(AppStep.HOME);
     setMeetingData({
       title: '',
       type: '',
@@ -148,6 +172,39 @@ const App: React.FC = () => {
     setIsPaused(false);
     setSaveStatus('idle');
     setConnectionStatus('connected');
+    setCopiedField(null);
+    summaryTextRef.current = '';
+  };
+
+  // Copy text to clipboard with feedback
+  const handleCopy = async (text: string, field: 'transcript' | 'summary') => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  // Start audio visualiser
+  const startAudioVisualiser = (audioContext: AudioContext, stream: MediaStream) => {
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 64;
+    analyser.smoothingTimeConstant = 0.8;
+    const source = audioContext.createMediaStreamSource(stream);
+    source.connect(analyser);
+    analyserRef.current = analyser;
+
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    const updateLevels = () => {
+      if (!analyserRef.current) return;
+      analyserRef.current.getByteFrequencyData(dataArray);
+      const levels = Array.from(dataArray).map(v => v / 255);
+      setAudioLevels(levels);
+      animationFrameRef.current = requestAnimationFrame(updateLevels);
+    };
+    updateLevels();
   };
 
   const handleToggleAttendee = (attendee: Attendee) => {
@@ -186,6 +243,9 @@ const App: React.FC = () => {
       const inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       audioContextRef.current = inputAudioContext;
       console.log("[Recording] AudioContext created, sampleRate:", inputAudioContext.sampleRate);
+
+      // Start audio visualiser
+      startAudioVisualiser(inputAudioContext, stream);
 
       // Start a timer to flush buffered transcript chunks every 300ms
       flushTimerRef.current = setInterval(flushTranscriptBuffer, 300);
@@ -256,6 +316,7 @@ const App: React.FC = () => {
       sessionRef.current = session;
       setIsRecording(true);
       setConnectionStatus('connected');
+      setShowFinishConfirm(false);
       setStep(AppStep.RECORDING);
       console.log("[Recording] Recording started, session:", typeof session);
     } catch (err) {
@@ -264,7 +325,12 @@ const App: React.FC = () => {
     }
   };
 
+  const handleFinishClick = () => {
+    setShowFinishConfirm(true);
+  };
+
   const finishRecording = async () => {
+    setShowFinishConfirm(false);
     // Flush any remaining buffered transcript chunks
     flushTranscriptBuffer();
     cleanupSession();
@@ -272,7 +338,7 @@ const App: React.FC = () => {
       audioStream.getTracks().forEach(track => track.stop());
     }
     setIsRecording(false);
-    setStep(AppStep.FINISHED);
+    transitionToStep(AppStep.FINISHED);
     setSaveStatus('saving');
 
     const meetingTitle = meetingData.title || 'Untitled meeting';
@@ -307,6 +373,7 @@ const App: React.FC = () => {
         if (!summaryRes.ok) throw new Error('Summary request failed');
         const data = await summaryRes.json();
         summaryText = data.summary || '';
+        summaryTextRef.current = summaryText;
       } catch (err) {
         console.error("Error generating summary:", err);
         summaryText = 'Summary could not be generated for this meeting.';
@@ -459,9 +526,9 @@ ${transcriptionText}
 
       <main className="flex-1 flex flex-col items-center">
         {step === AppStep.HOME && (
-          <div className="flex-1 flex flex-col items-center justify-center animate-in fade-in duration-1000">
+          <div className={`flex-1 flex flex-col items-center justify-center transition-all duration-300 ${stepTransition === 'exiting' ? 'opacity-0 scale-95' : stepTransition === 'entering' ? 'opacity-0 scale-95 animate-[fadeScaleIn_0.4s_ease-out_forwards]' : 'opacity-100'}`}>
             <button
-              onClick={() => setStep(AppStep.DETAILS)}
+              onClick={() => transitionToStep(AppStep.DETAILS)}
               className="bg-brand hover:bg-brand-dark text-white px-12 py-7 rounded-2xl text-2xl font-medium transition-all transform hover:scale-[1.03] flex items-center gap-4 shadow-2xl shadow-brand/20 border-none"
             >
               <PlusIcon size={32} />
@@ -471,7 +538,7 @@ ${transcriptionText}
         )}
 
         {step === AppStep.DETAILS && (
-          <div className="py-16 max-w-[1000px] w-full px-8 space-y-12 animate-in slide-in-from-bottom-4 duration-500">
+          <div className={`py-16 max-w-[1000px] w-full px-8 space-y-12 transition-all duration-300 ${stepTransition === 'exiting' ? 'opacity-0 translate-y-4' : stepTransition === 'entering' ? 'opacity-0 translate-y-4 animate-[slideUp_0.4s_ease-out_forwards]' : 'opacity-100'}`}>
             <div className="space-y-4">
               <h2 className="text-4xl font-medium tracking-tight">Meeting details</h2>
               <p className="text-gray-500 text-lg">Provide the context and select the attendees for this session.</p>
@@ -523,7 +590,7 @@ ${transcriptionText}
 
             <div className="pt-10 flex items-center justify-between border-t border-gray-100">
               <button
-                onClick={() => setStep(AppStep.HOME)}
+                onClick={() => transitionToStep(AppStep.HOME)}
                 className="text-gray-400 hover:text-gray-600 font-medium px-4 py-2 transition-colors"
               >
                 Back to start
@@ -540,84 +607,135 @@ ${transcriptionText}
         )}
 
         {step === AppStep.RECORDING && (
-          <div className="py-16 max-w-[1000px] w-full px-8 space-y-8 animate-in zoom-in-95 duration-500">
-            <div className="bg-white rounded-[2rem] border border-gray-100 p-12 shadow-sm space-y-12 relative overflow-hidden">
-              <div className={`absolute top-0 left-0 w-full h-1.5 ${isPaused ? 'bg-amber-400' : 'bg-brand animate-pulse'}`}></div>
+          <>
+            <div className={`py-16 max-w-[1000px] w-full px-8 space-y-8 transition-all duration-300 ${stepTransition === 'exiting' ? 'opacity-0 scale-95' : stepTransition === 'entering' ? 'opacity-0 scale-[0.95] animate-[fadeScaleIn_0.4s_ease-out_forwards]' : 'opacity-100'}`}>
+              <div className="bg-white rounded-[2rem] border border-gray-100 p-12 shadow-sm space-y-12 relative overflow-hidden">
+                <div className={`absolute top-0 left-0 w-full h-1.5 ${isPaused ? 'bg-amber-400' : 'bg-brand animate-pulse'}`}></div>
 
-              <div className="flex justify-between items-start">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-brand font-medium mb-2 uppercase tracking-widest text-xs">
-                    <span className={`w-2.5 h-2.5 rounded-full ${connectionStatus === 'disconnected' ? 'bg-red-700' : isPaused ? 'bg-amber-400' : 'bg-red-500 animate-pulse'}`}></span>
-                    {connectionStatus === 'disconnected' ? 'Connection lost — transcription may have stopped' : isPaused ? 'Recording paused' : 'Live recording...'}
-                  </div>
-                  <h2 className="text-4xl font-medium tracking-tight text-primary">{meetingData.title || 'Untitled meeting'}</h2>
-                  <p className="text-gray-400 text-lg">{meetingData.type || 'Standard meeting'}</p>
-                </div>
-                <div className="text-right space-y-2">
-                  <div className="text-sm font-medium text-gray-400 flex items-center justify-end gap-2 uppercase tracking-widest">
-                    <Calendar size={14} />
-                    {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
-                  </div>
-                  <div className="text-sm font-medium text-gray-400 flex items-center justify-end gap-2">
-                    <Clock size={14} />
-                    {new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-center py-8">
-                <div className="text-8xl font-light tracking-tighter tabular-nums text-primary">
-                  {formatTime(recordingTime)}
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <h3 className="text-xs font-semibold uppercase tracking-widest text-gray-400">Live transcription</h3>
-                <div ref={transcriptionContainerRef} className="bg-gray-50/50 rounded-3xl p-8 h-[350px] overflow-y-auto font-light text-xl leading-relaxed scroll-smooth border border-gray-100">
-                  {meetingData.transcription.length === 0 ? (
-                    <div className="h-full flex items-center justify-center text-gray-300 italic">
-                      Waiting for speech...
+                <div className="flex justify-between items-start">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-brand font-medium mb-2 uppercase tracking-widest text-xs">
+                      <span className={`w-2.5 h-2.5 rounded-full ${connectionStatus === 'disconnected' ? 'bg-red-700' : isPaused ? 'bg-amber-400' : 'bg-red-500 animate-pulse'}`}></span>
+                      {connectionStatus === 'disconnected' ? 'Connection lost — transcription may have stopped' : isPaused ? 'Recording paused' : 'Live recording...'}
                     </div>
-                  ) : (
-                    <p className="text-primary/80 whitespace-pre-wrap">{meetingData.transcription.join('')}</p>
-                  )}
+                    <h2 className="text-4xl font-medium tracking-tight text-primary">{meetingData.title || 'Untitled meeting'}</h2>
+                    <p className="text-gray-400 text-lg">{meetingData.type || 'Standard meeting'}</p>
+                  </div>
+                  <div className="text-right space-y-2">
+                    <div className="text-sm font-medium text-gray-400 flex items-center justify-end gap-2 uppercase tracking-widest">
+                      <Calendar size={14} />
+                      {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    </div>
+                    <div className="text-sm font-medium text-gray-400 flex items-center justify-end gap-2">
+                      <Clock size={14} />
+                      {new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-center py-8">
+                  <div className="text-8xl font-light tracking-tighter tabular-nums text-primary">
+                    {formatTime(recordingTime)}
+                  </div>
+                </div>
+
+                {/* Audio Visualiser */}
+                <div className="flex items-end justify-center gap-[3px] h-16 px-4">
+                  {audioLevels.map((level, i) => (
+                    <div
+                      key={i}
+                      className="rounded-full transition-all duration-75"
+                      style={{
+                        width: '6px',
+                        height: `${Math.max(4, (isPaused ? 0.05 : level) * 64)}px`,
+                        backgroundColor: isPaused ? '#d1d5db' : level > 0.6 ? '#F36D5B' : level > 0.3 ? '#fb923c' : '#e5e7eb',
+                        opacity: isPaused ? 0.4 : 0.5 + level * 0.5,
+                      }}
+                    />
+                  ))}
+                </div>
+
+                <div className="space-y-4">
+                  <h3 className="text-xs font-semibold uppercase tracking-widest text-gray-400">Live transcription</h3>
+                  <div ref={transcriptionContainerRef} className="bg-gray-50/50 rounded-3xl p-8 h-[350px] overflow-y-auto font-light text-xl leading-relaxed scroll-smooth border border-gray-100">
+                    {meetingData.transcription.length === 0 ? (
+                      <div className="h-full flex items-center justify-center text-gray-300 italic">
+                        Waiting for speech...
+                      </div>
+                    ) : (
+                      <p className="text-primary/80 whitespace-pre-wrap">{meetingData.transcription.join('')}</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-center gap-6 pt-4">
+                  <button
+                    onClick={() => setIsPaused(!isPaused)}
+                    className={`flex items-center gap-2 px-10 py-5 rounded-2xl font-medium transition-all text-lg ${isPaused
+                      ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                  >
+                    {isPaused ? <Play size={22} /> : <Pause size={22} />}
+                    {isPaused ? 'Continue recording' : 'Pause recording'}
+                  </button>
+                  <button
+                    onClick={handleFinishClick}
+                    className="bg-brand hover:bg-brand-dark text-white px-10 py-5 rounded-2xl font-medium flex items-center gap-2 shadow-xl shadow-brand/10 text-lg"
+                  >
+                    <Square size={22} />
+                    Finish recording
+                  </button>
                 </div>
               </div>
 
-              <div className="flex items-center justify-center gap-6 pt-4">
-                <button
-                  onClick={() => setIsPaused(!isPaused)}
-                  className={`flex items-center gap-2 px-10 py-5 rounded-2xl font-medium transition-all text-lg ${isPaused
-                    ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                >
-                  {isPaused ? <Play size={22} /> : <Pause size={22} />}
-                  {isPaused ? 'Continue recording' : 'Pause recording'}
-                </button>
-                <button
-                  onClick={finishRecording}
-                  className="bg-brand hover:bg-brand-dark text-white px-10 py-5 rounded-2xl font-medium flex items-center gap-2 shadow-xl shadow-brand/10 text-lg"
-                >
-                  <Square size={22} />
-                  Finish recording
-                </button>
+              <div className="bg-brand/5 rounded-3xl p-8 flex items-center gap-5 border border-brand/10">
+                <div className="w-12 h-12 bg-brand/10 rounded-2xl flex items-center justify-center text-brand shrink-0">
+                  <UserPlus size={24} />
+                </div>
+                <div className="text-lg text-primary/80">
+                  <span className="font-semibold">{meetingData.attendees.length} team members</span> will receive the transcription via email.
+                </div>
               </div>
             </div>
 
-            <div className="bg-brand/5 rounded-3xl p-8 flex items-center gap-5 border border-brand/10">
-              <div className="w-12 h-12 bg-brand/10 rounded-2xl flex items-center justify-center text-brand shrink-0">
-                <UserPlus size={24} />
+            {/* Finish Confirmation Modal */}
+            {showFinishConfirm && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]">
+                <div className="bg-white rounded-3xl p-10 max-w-md w-full mx-4 shadow-2xl space-y-6 animate-[fadeScaleIn_0.3s_ease-out]">
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-500 shrink-0">
+                      <AlertTriangle size={28} />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-semibold text-primary">Finish recording?</h3>
+                      <p className="text-gray-500 mt-1">This will stop the transcription and send emails to all selected attendees.</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={() => setShowFinishConfirm(false)}
+                      className="flex-1 px-6 py-4 rounded-2xl border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+                    >
+                      <X size={18} />
+                      Keep recording
+                    </button>
+                    <button
+                      onClick={finishRecording}
+                      className="flex-1 px-6 py-4 rounded-2xl bg-brand text-white font-medium hover:bg-brand-dark transition-colors flex items-center justify-center gap-2 shadow-lg shadow-brand/20"
+                    >
+                      <Square size={18} />
+                      Finish & send
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div className="text-lg text-primary/80">
-                <span className="font-semibold">{meetingData.attendees.length} team members</span> will receive the transcription via email.
-              </div>
-            </div>
-          </div>
+            )}
+          </>
         )}
 
         {step === AppStep.FINISHED && (
-          <div className="flex-1 max-w-2xl mx-auto flex flex-col items-center justify-center text-center space-y-10 animate-in fade-in zoom-in-95 duration-700">
+          <div className={`flex-1 max-w-2xl mx-auto flex flex-col items-center justify-center text-center space-y-10 transition-all duration-300 ${stepTransition === 'exiting' ? 'opacity-0 scale-95' : stepTransition === 'entering' ? 'opacity-0 scale-[0.95] animate-[fadeScaleIn_0.5s_ease-out_forwards]' : 'opacity-100'}`}>
             <div className="w-32 h-32 bg-green-50 text-green-500 rounded-full flex items-center justify-center mb-4">
               {saveStatus === 'saving' ? (
                 <Loader2 className="animate-spin" size={64} />
@@ -635,6 +753,28 @@ ${transcriptionText}
                     : 'Thank you for recording this meeting, the system will email selected attendees the transcription shortly.'}
               </p>
             </div>
+
+            {/* Copy Buttons */}
+            {saveStatus === 'saved' && (
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => handleCopy(meetingData.transcription.join(''), 'transcript')}
+                  className={`flex items-center gap-2 px-6 py-3 rounded-xl border text-sm font-medium transition-all ${copiedField === 'transcript' ? 'bg-green-50 border-green-200 text-green-600' : 'bg-white border-gray-200 text-gray-600 hover:border-brand/40 hover:text-brand'}`}
+                >
+                  {copiedField === 'transcript' ? <Check size={16} /> : <Copy size={16} />}
+                  {copiedField === 'transcript' ? 'Copied!' : 'Copy transcript'}
+                </button>
+                {summaryTextRef.current && (
+                  <button
+                    onClick={() => handleCopy(summaryTextRef.current, 'summary')}
+                    className={`flex items-center gap-2 px-6 py-3 rounded-xl border text-sm font-medium transition-all ${copiedField === 'summary' ? 'bg-green-50 border-green-200 text-green-600' : 'bg-white border-gray-200 text-gray-600 hover:border-brand/40 hover:text-brand'}`}
+                  >
+                    {copiedField === 'summary' ? <Check size={16} /> : <Copy size={16} />}
+                    {copiedField === 'summary' ? 'Copied!' : 'Copy summary'}
+                  </button>
+                )}
+              </div>
+            )}
 
             <div className="pt-8">
               <button
@@ -662,6 +802,18 @@ ${transcriptionText}
         @keyframes progress {
           from { width: 0%; }
           to { width: 100%; }
+        }
+        @keyframes fadeScaleIn {
+          from { opacity: 0; transform: scale(0.95); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(16px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
         }
       `}</style>
     </div>
