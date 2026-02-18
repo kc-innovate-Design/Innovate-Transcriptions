@@ -1101,7 +1101,7 @@ ${diarizedHtml}
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-brand font-medium mb-2 uppercase tracking-widest text-xs">
                         <span className={`w-2.5 h-2.5 rounded-full ${connectionStatus === 'disconnected' ? 'bg-red-700' : connectionStatus === 'reconnecting' ? 'bg-blue-500 animate-pulse' : isPaused ? 'bg-amber-400' : 'bg-red-500 animate-pulse'}`}></span>
-                        {connectionStatus === 'reconnecting' ? 'Reconnecting...' : connectionStatus === 'disconnected' ? 'Connection lost — transcription may have stopped' : isPaused ? 'Recording paused' : 'Live recording...'}
+                        {connectionStatus === 'reconnecting' ? 'Reconnecting...' : connectionStatus === 'disconnected' ? 'Connection lost' : isPaused ? 'Recording paused' : 'Live recording...'}
                       </div>
                       <h2 className="text-4xl font-medium tracking-tight text-primary">{meetingData.title || 'Untitled meeting'}</h2>
                       <p className="text-gray-400 text-lg">{meetingData.type || 'Standard meeting'}</p>
@@ -1117,6 +1117,31 @@ ${diarizedHtml}
                       </div>
                     </div>
                   </div>
+
+                  {/* Connection warning banner */}
+                  {connectionStatus === 'disconnected' && (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3 animate-[fadeScaleIn_0.3s_ease-out_forwards]">
+                      <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <span className="text-red-600 text-lg">⚠</span>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-red-800">Transcription connection lost</p>
+                        <p className="text-sm text-red-700">New speech is no longer being captured. Everything recorded so far has been saved.</p>
+                        <p className="text-sm text-red-600 font-medium mt-2">You can click <strong>Finish recording</strong> to save what you have, or try stopping and starting a new recording.</p>
+                      </div>
+                    </div>
+                  )}
+                  {connectionStatus === 'reconnecting' && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3 animate-[fadeScaleIn_0.3s_ease-out_forwards]">
+                      <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <span className="animate-spin text-amber-600">⟳</span>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-amber-800">Reconnecting to transcription service...</p>
+                        <p className="text-sm text-amber-700">This usually takes a few seconds. Your existing transcript is safe.</p>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-center py-8">
                     <div className="text-8xl font-light tracking-tighter tabular-nums text-primary">
