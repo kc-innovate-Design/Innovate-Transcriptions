@@ -512,9 +512,12 @@ const App: React.FC = () => {
       setShowFinishConfirm(false);
       setStep(AppStep.RECORDING);
       console.log("[Recording] Recording started, session:", typeof session);
-    } catch (err) {
+    } catch (err: any) {
       console.error("[Recording] Failed to start recording:", err);
-      alert("Microphone access is required to record meetings.");
+      const msg = err?.name === 'NotAllowedError' || err?.name === 'NotFoundError'
+        ? 'Microphone access is required to record meetings.'
+        : `Failed to start recording: ${err?.message || err}`;
+      alert(msg);
     }
   };
 
