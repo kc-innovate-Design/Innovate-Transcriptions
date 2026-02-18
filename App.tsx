@@ -189,6 +189,11 @@ const App: React.FC = () => {
   const transcriptionContainerRef = useRef<HTMLDivElement>(null);
   const transcriptBufferRef = useRef<string[]>([]);
   const flushTimerRef = useRef<any>(null);
+  // Session resumption & reconnection refs
+  const resumptionHandleRef = useRef<string | null>(null);
+  const isReconnectingRef = useRef(false);
+  const aiRef = useRef<GoogleGenAI | null>(null);
+  const audioStreamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
   useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
@@ -247,6 +252,10 @@ const App: React.FC = () => {
 
   // Cleanup session and AudioContext
   const cleanupSession = () => {
+    isReconnectingRef.current = false;
+    resumptionHandleRef.current = null;
+    aiRef.current = null;
+    audioStreamRef.current = null;
     try {
       if (sessionRef.current) {
         sessionRef.current.close?.();
@@ -349,12 +358,130 @@ const App: React.FC = () => {
     return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Connect to Gemini Live API (used by both start and reconnect)
+  const connectToGemini = async (ai: GoogleGenAI, stream: MediaStream, inputAudioContext: AudioContext, resumeHandle?: string | null) => {
+    const session = await ai.live.connect({
+      model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+      config: {
+        responseModalities: [Modality.AUDIO],
+        inputAudioTranscription: {},
+        outputAudioTranscription: {},
+        systemInstruction: 'You are a professional meeting transcriber. Transcribe the conversation accurately in UK English. Do not add summaries, only transcription.',
+        contextWindowCompression: {
+          triggerTokens: '100000',
+          slidingWindow: { targetTokens: '50000' },
+        },
+        sessionResumption: {
+          transparent: true,
+          ...(resumeHandle ? { handle: resumeHandle } : {}),
+        },
+      },
+      callbacks: {
+        onopen: () => {
+          console.log("[Recording] Gemini session OPEN — setting up audio pipeline");
+          isReconnectingRef.current = false;
+          setConnectionStatus('connected');
+          const source = inputAudioContext.createMediaStreamSource(stream);
+          const scriptProcessor = inputAudioContext.createScriptProcessor(4096, 1, 1);
+          let audioChunkCount = 0;
+
+          scriptProcessor.onaudioprocess = (e) => {
+            if (isRecordingRef.current && !isPausedRef.current) {
+              const inputData = e.inputBuffer.getChannelData(0);
+              const pcmBlob = createBlob(inputData);
+              audioChunkCount++;
+              if (audioChunkCount % 50 === 1) {
+                console.log(`[Recording] Sending audio chunk #${audioChunkCount}`);
+              }
+              sessionRef.current?.sendRealtimeInput({
+                audio: {
+                  data: pcmBlob.data,
+                  mimeType: pcmBlob.mimeType
+                }
+              });
+            }
+          };
+
+          source.connect(scriptProcessor);
+          scriptProcessor.connect(inputAudioContext.destination);
+          console.log("[Recording] Audio pipeline connected");
+        },
+        onmessage: async (message: LiveServerMessage) => {
+          console.log("[Recording] Gemini message received:", JSON.stringify(message).substring(0, 300));
+          // Capture resumption tokens for transparent reconnection
+          if ((message as any).sessionResumptionUpdate?.newHandle) {
+            resumptionHandleRef.current = (message as any).sessionResumptionUpdate.newHandle;
+            console.log("[Recording] Resumption handle updated");
+          }
+          // Proactive reconnect on GoAway (server warns ~60s before disconnect)
+          if ((message as any).goAway) {
+            console.log("[Recording] GoAway received — proactively reconnecting");
+            reconnectSession();
+            return;
+          }
+          if (message.serverContent?.inputTranscription) {
+            const text = message.serverContent.inputTranscription.text;
+            if (text.trim()) {
+              console.log("[Recording] Transcription:", text.substring(0, 100));
+              // Buffer chunks instead of updating state on every message
+              transcriptBufferRef.current.push(text);
+            }
+          }
+        },
+        onerror: (e: any) => {
+          console.error("[Recording] Gemini Error:", e?.message || e);
+          setConnectionStatus('disconnected');
+        },
+        onclose: (e: any) => {
+          console.log("[Recording] Gemini session closed — code:", e?.code, "reason:", e?.reason || "none");
+          // Auto-reconnect if we were still recording and have a resumption handle
+          if (isRecordingRef.current && !isReconnectingRef.current && resumptionHandleRef.current) {
+            console.log("[Recording] Unexpected close during recording — auto-reconnecting");
+            reconnectSession();
+          } else if (isRecordingRef.current) {
+            setConnectionStatus('disconnected');
+          }
+        }
+      }
+    });
+    return session;
+  };
+
+  // Reconnect to Gemini Live API using stored resumption handle
+  const reconnectSession = async () => {
+    if (isReconnectingRef.current) return; // Prevent concurrent reconnect attempts
+    isReconnectingRef.current = true;
+    setConnectionStatus('reconnecting');
+    console.log("[Recording] Reconnecting with handle:", resumptionHandleRef.current?.substring(0, 20) + "...");
+
+    // Close old session without tearing down audio
+    try { sessionRef.current?.close?.(); } catch (e) { /* ignore */ }
+    sessionRef.current = null;
+
+    try {
+      const ai = aiRef.current;
+      const stream = audioStreamRef.current;
+      const ctx = audioContextRef.current;
+      if (!ai || !stream || !ctx || ctx.state === 'closed') {
+        throw new Error('Missing audio resources for reconnection');
+      }
+      const newSession = await connectToGemini(ai, stream, ctx, resumptionHandleRef.current);
+      sessionRef.current = newSession;
+      console.log("[Recording] Reconnection successful");
+    } catch (err) {
+      console.error("[Recording] Reconnection failed:", err);
+      isReconnectingRef.current = false;
+      setConnectionStatus('disconnected');
+    }
+  };
+
   const startRecordingSession = async () => {
     try {
       console.log("[Recording] Requesting microphone access...");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       console.log("[Recording] Microphone access granted, tracks:", stream.getAudioTracks().length);
       setAudioStream(stream);
+      audioStreamRef.current = stream;
 
       // Fetch API key from secure backend
       const token = await user?.getIdToken();
@@ -365,6 +492,7 @@ const App: React.FC = () => {
       const { key } = await keyRes.json();
 
       const ai = new GoogleGenAI({ apiKey: key });
+      aiRef.current = ai;
       const inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       audioContextRef.current = inputAudioContext;
       console.log("[Recording] AudioContext created, sampleRate:", inputAudioContext.sampleRate);
@@ -376,67 +504,7 @@ const App: React.FC = () => {
       flushTimerRef.current = setInterval(flushTranscriptBuffer, 300);
 
       console.log("[Recording] Connecting to Gemini Live API...");
-      const session = await ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
-        config: {
-          responseModalities: [Modality.AUDIO],
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
-          systemInstruction: 'You are a professional meeting transcriber. Transcribe the conversation accurately in UK English. Do not add summaries, only transcription.'
-        },
-        callbacks: {
-          onopen: () => {
-            console.log("[Recording] Gemini session OPEN — setting up audio pipeline");
-            setConnectionStatus('connected');
-            const source = inputAudioContext.createMediaStreamSource(stream);
-            const scriptProcessor = inputAudioContext.createScriptProcessor(4096, 1, 1);
-            let audioChunkCount = 0;
-
-            scriptProcessor.onaudioprocess = (e) => {
-              if (isRecordingRef.current && !isPausedRef.current) {
-                const inputData = e.inputBuffer.getChannelData(0);
-                const pcmBlob = createBlob(inputData);
-                audioChunkCount++;
-                if (audioChunkCount % 50 === 1) {
-                  console.log(`[Recording] Sending audio chunk #${audioChunkCount}`);
-                }
-                session.sendRealtimeInput({
-                  audio: {
-                    data: pcmBlob.data,
-                    mimeType: pcmBlob.mimeType
-                  }
-                });
-              }
-            };
-
-            source.connect(scriptProcessor);
-            scriptProcessor.connect(inputAudioContext.destination);
-            console.log("[Recording] Audio pipeline connected");
-          },
-          onmessage: async (message: LiveServerMessage) => {
-            console.log("[Recording] Gemini message received:", JSON.stringify(message).substring(0, 300));
-            if (message.serverContent?.inputTranscription) {
-              const text = message.serverContent.inputTranscription.text;
-              if (text.trim()) {
-                console.log("[Recording] Transcription:", text.substring(0, 100));
-                // Buffer chunks instead of updating state on every message
-                transcriptBufferRef.current.push(text);
-              }
-            }
-          },
-          onerror: (e: any) => {
-            console.error("[Recording] Gemini Error:", e?.message || e);
-            setConnectionStatus('disconnected');
-          },
-          onclose: (e: any) => {
-            console.log("[Recording] Gemini session closed — code:", e?.code, "reason:", e?.reason || "none");
-            // Only show disconnected if we were still recording (unexpected close)
-            if (isRecordingRef.current) {
-              setConnectionStatus('disconnected');
-            }
-          }
-        }
-      });
+      const session = await connectToGemini(ai, stream, inputAudioContext);
 
       sessionRef.current = session;
       setIsRecording(true);
@@ -487,30 +555,46 @@ const App: React.FC = () => {
     const dateStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
     const attendeeNames = meetingData.attendees.map(a => a.name).join(', ');
 
-    // Generate AI summary via secure backend
+    // Generate AI summary + speaker-separated transcript in parallel
     let summaryText = '';
+    let diarizedText = transcriptionText;
     if (meetingData.transcription.length > 0) {
       try {
         const token = await user?.getIdToken();
-        const summaryRes = await fetch('/api/summary', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            meetingTitle,
-            meetingType,
-            attendeeNames,
-            transcriptionText
-          })
-        });
-        if (!summaryRes.ok) throw new Error('Summary request failed');
-        const data = await summaryRes.json();
-        summaryText = data.summary || '';
-        summaryTextRef.current = summaryText;
+        const headers = {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        };
+
+        // Run summary and diarization in parallel
+        const [summaryResult, diarizeResult] = await Promise.allSettled([
+          fetch('/api/summary', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ meetingTitle, meetingType, attendeeNames, transcriptionText })
+          }).then(r => r.ok ? r.json() : Promise.reject('Summary request failed')),
+          fetch('/api/diarize', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ attendeeNames, transcriptionText })
+          }).then(r => r.ok ? r.json() : Promise.reject('Diarize request failed'))
+        ]);
+
+        if (summaryResult.status === 'fulfilled') {
+          summaryText = summaryResult.value.summary || '';
+          summaryTextRef.current = summaryText;
+        } else {
+          console.error("Error generating summary:", summaryResult.reason);
+          summaryText = 'Summary could not be generated for this meeting.';
+        }
+
+        if (diarizeResult.status === 'fulfilled') {
+          diarizedText = diarizeResult.value.diarized || transcriptionText;
+        } else {
+          console.error("Error diarizing transcript:", diarizeResult.reason);
+        }
       } catch (err) {
-        console.error("Error generating summary:", err);
+        console.error("Error in post-processing:", err);
         summaryText = 'Summary could not be generated for this meeting.';
       }
     }
@@ -532,6 +616,21 @@ const App: React.FC = () => {
       })
       .join('\n');
 
+    // Format diarized transcript for email (convert line breaks to HTML)
+    const diarizedHtml = diarizedText
+      .split('\n')
+      .map(line => {
+        const trimmed = line.trim();
+        if (trimmed === '') return '<br/>';
+        // Bold speaker names (lines starting with "Name:")
+        const speakerMatch = trimmed.match(/^([A-Za-z\s]+):\s/);
+        if (speakerMatch) {
+          return `<p style="margin: 4px 0;"><strong style="color: #F36D5B;">${speakerMatch[1]}:</strong> ${trimmed.substring(speakerMatch[0].length)}</p>`;
+        }
+        return `<p style="margin: 4px 0;">${trimmed}</p>`;
+      })
+      .join('\n');
+
     try {
       // Save transcription + summary to Firestore
       await addDoc(collection(db, 'transcriptions'), {
@@ -539,6 +638,7 @@ const App: React.FC = () => {
         type: meetingType,
         attendees: meetingData.attendees.map(a => ({ id: a.id, name: a.name, email: a.email })),
         transcription: meetingData.transcription,
+        diarizedTranscription: diarizedText,
         summary: summaryText,
         duration: recordingTime,
         createdAt: serverTimestamp(),
@@ -579,8 +679,8 @@ const App: React.FC = () => {
                   ` : ''}
 
                   <h3 style="margin: 24px 0 12px 0; font-size: 16px; color: #888;">Full Transcription</h3>
-                  <div style="background: #f8f8f8; border-radius: 12px; padding: 24px; margin: 0 0 24px 0; white-space: pre-wrap; font-size: 15px; line-height: 1.8; color: #333;">
-${transcriptionText}
+                  <div style="background: #f8f8f8; border-radius: 12px; padding: 24px; margin: 0 0 24px 0; font-size: 15px; line-height: 1.8; color: #333;">
+${diarizedHtml}
                   </div>
 
                   <p style="font-size: 13px; color: #aaa; margin-bottom: 0;">This email was sent automatically by Innovate Transcriptions.</p>
@@ -998,8 +1098,8 @@ ${transcriptionText}
                   <div className="flex justify-between items-start">
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-brand font-medium mb-2 uppercase tracking-widest text-xs">
-                        <span className={`w-2.5 h-2.5 rounded-full ${connectionStatus === 'disconnected' ? 'bg-red-700' : isPaused ? 'bg-amber-400' : 'bg-red-500 animate-pulse'}`}></span>
-                        {connectionStatus === 'disconnected' ? 'Connection lost — transcription may have stopped' : isPaused ? 'Recording paused' : 'Live recording...'}
+                        <span className={`w-2.5 h-2.5 rounded-full ${connectionStatus === 'disconnected' ? 'bg-red-700' : connectionStatus === 'reconnecting' ? 'bg-blue-500 animate-pulse' : isPaused ? 'bg-amber-400' : 'bg-red-500 animate-pulse'}`}></span>
+                        {connectionStatus === 'reconnecting' ? 'Reconnecting...' : connectionStatus === 'disconnected' ? 'Connection lost — transcription may have stopped' : isPaused ? 'Recording paused' : 'Live recording...'}
                       </div>
                       <h2 className="text-4xl font-medium tracking-tight text-primary">{meetingData.title || 'Untitled meeting'}</h2>
                       <p className="text-gray-400 text-lg">{meetingData.type || 'Standard meeting'}</p>

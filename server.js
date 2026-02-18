@@ -69,6 +69,38 @@ ${transcriptionText}`
     }
 });
 
+// Diarize transcript — identify and label speakers
+app.post('/api/diarize', requireAuth, async (req, res) => {
+    try {
+        if (!ai) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
+        const { attendeeNames, transcriptionText } = req.body;
+
+        const diarizeResponse = await ai.models.generateContent({
+            model: 'gemini-2.0-flash',
+            contents: `You are a professional transcript editor. Your task is to take a raw meeting transcript (which is one continuous block of text) and reformat it into a speaker-separated dialogue.
+
+Rules:
+- Identify when different speakers are talking based on conversational context, topic shifts, and dialogue patterns.
+- Label speakers as "Speaker 1", "Speaker 2", "Speaker 3", etc. Use these labels consistently throughout.
+- Format each speaker turn on its own line, prefixed with the speaker label and a colon, e.g. "Speaker 1: ..."
+- Add a blank line between different speakers for readability.
+- Do NOT summarise or paraphrase. Keep the original words exactly as they are.
+- Do NOT add any commentary, headings, or notes. Only output the reformatted transcript.
+- Fix obvious transcription errors only if you are very confident.
+- Write in UK English.
+
+Raw transcript:
+${transcriptionText}`
+        });
+
+        res.json({ diarized: diarizeResponse.text || transcriptionText });
+    } catch (err) {
+        console.error('Error diarizing transcript:', err.message);
+        // Fall back to raw transcript on error
+        res.json({ diarized: req.body.transcriptionText || '' });
+    }
+});
+
 // --- Serve static frontend in production ---
 const distPath = path.join(__dirname, 'dist');
 app.use(express.static(distPath));
