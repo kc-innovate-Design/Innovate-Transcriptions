@@ -372,7 +372,6 @@ const App: React.FC = () => {
           slidingWindow: { targetTokens: '50000' },
         },
         sessionResumption: {
-          transparent: true,
           ...(resumeHandle ? { handle: resumeHandle } : {}),
         },
       },
