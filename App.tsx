@@ -2,10 +2,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AppStep, MeetingData, Attendee, MEETING_TYPES } from './types';
 import { ALL_ATTENDEES, DEPARTMENTS } from './constants';
-import { Mic, Pause, Play, Square, CheckCircle, ChevronRight, UserPlus, Clock, Calendar, MessageSquare, LogOut, User, Loader2, Copy, Check, X, AlertTriangle, XCircle, Zap, Plus, Trash2, Pencil, Settings } from 'lucide-react';
+import { Mic, Pause, Play, Square, CheckCircle, ChevronRight, UserPlus, Clock, Calendar, MessageSquare, LogOut, User, Loader2, Copy, Check, X, AlertTriangle, XCircle, Zap, Plus, Trash2, Pencil, Settings, FileText } from 'lucide-react';
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { onAuthStateChanged, User as FirebaseUser, signOut } from 'firebase/auth';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { Auth } from './Auth';
 
@@ -759,6 +759,92 @@ ${diarizedHtml}
     </div>
   );
 
+  // Recover last session logic
+  const [recoverLoading, setRecoverLoading] = useState(false);
+  const [showManualRecover, setShowManualRecover] = useState(false);
+  const [manualTranscriptText, setManualTranscriptText] = useState('');
+
+  const handleManualRecoverSubmit = () => {
+    let finalTranscript: string[] = [];
+    try {
+      // Try parsing as JSON first (if they pasted the array ["word", "word"])
+      const parsed = JSON.parse(manualTranscriptText);
+      if (Array.isArray(parsed)) {
+        finalTranscript = parsed.map(String);
+      } else {
+        finalTranscript = [String(parsed)];
+      }
+    } catch (e) {
+      // If not JSON, treat as raw text
+      if (manualTranscriptText.trim()) {
+        finalTranscript = [manualTranscriptText];
+      }
+    }
+
+    if (finalTranscript.length === 0) {
+      alert("Please paste some transcript text.");
+      return;
+    }
+
+    // Load into state
+    setMeetingData({
+      title: 'Recovered Meeting',
+      type: 'Standard meeting',
+      attendees: [{ id: '1', name: 'Unknown', email: '', department: '' }],
+      transcription: finalTranscript
+    });
+    setRecordingTime(3600); // Default to 1 hour placeholder
+    setShowManualRecover(false);
+    transitionToStep(AppStep.FINISHED);
+  };
+
+  const handleRecover = async () => {
+    if (!user) return;
+    setRecoverLoading(true);
+    try {
+      const q = query(
+        collection(db, 'transcriptions'),
+        orderBy('createdAt', 'desc'),
+        limit(1)
+      );
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        alert("No previous session found to recover.");
+        setRecoverLoading(false);
+        return;
+      }
+
+      const docSnap = querySnapshot.docs[0];
+      const data = docSnap.data();
+
+      // Restore meeting interface with previous data
+      setMeetingData({
+        title: data.title || '',
+        type: data.type || '',
+        attendees: data.attendees || [],
+        transcription: data.transcription || []
+      });
+
+      // Approximate duration from stored seconds
+      setRecordingTime(data.duration || 0);
+
+      // Populate summary if it exists
+      if (data.summary) {
+        summaryTextRef.current = data.summary;
+      }
+
+      // Jump to finish screen to allow re-processing
+      transitionToStep(AppStep.FINISHED);
+
+    } catch (err: any) {
+      console.error("Error recovering session:", err);
+      alert("Failed to recover last session: " + err.message);
+    } finally {
+      setRecoverLoading(false);
+    }
+  };
+
   // Auth loading state
   if (authLoading) {
     return (
@@ -798,325 +884,326 @@ ${diarizedHtml}
               className="bg-brand hover:bg-brand-dark text-white px-12 py-7 rounded-2xl text-2xl font-medium transition-all transform hover:scale-[1.03] flex items-center gap-4 shadow-2xl shadow-brand/20 border-none"
             >
               <PlusIcon size={32} />
-              Start new meeting
+              Start New Meeting
             </button>
           </div>
         )}
 
-        {step === AppStep.DETAILS && (
-          <div className={`pb-32 py-16 max-w-[1000px] w-full px-8 space-y-12 transition-all duration-300 ${stepTransition === 'exiting' ? 'opacity-0 translate-y-4' : stepTransition === 'entering' ? 'opacity-0 translate-y-4 animate-[slideUp_0.4s_ease-out_forwards]' : 'opacity-100'}`}>
-            <div className="space-y-4">
-              <h2 className="text-4xl font-medium tracking-tight">Meeting details</h2>
-              <p className="text-gray-500 text-lg">Provide the context and select the attendees for this session.</p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-600">Meeting title (optional)</label>
-                <input
-                  type="text"
-                  value={meetingData.title}
-                  onChange={(e) => setMeetingData({ ...meetingData, title: e.target.value })}
-                  placeholder="e.g. Design Strategy Workshop"
-                  className="w-full px-5 py-4 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all text-lg bg-white"
-                />
+        {
+          step === AppStep.DETAILS && (
+            <div className={`pb-32 py-16 max-w-[1000px] w-full px-8 space-y-12 transition-all duration-300 ${stepTransition === 'exiting' ? 'opacity-0 translate-y-4' : stepTransition === 'entering' ? 'opacity-0 translate-y-4 animate-[slideUp_0.4s_ease-out_forwards]' : 'opacity-100'}`}>
+              <div className="space-y-4">
+                <h2 className="text-4xl font-medium tracking-tight">Meeting details</h2>
+                <p className="text-gray-500 text-lg">Provide the context and select the attendees for this session.</p>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-600">Meeting type (optional)</label>
-                <select
-                  value={meetingData.type}
-                  onChange={(e) => setMeetingData({ ...meetingData, type: e.target.value })}
-                  className="w-full px-5 py-4 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all text-lg appearance-none bg-white"
-                >
-                  <option value="">Select type...</option>
-                  {MEETING_TYPES.map(type => (
-                    <option key={type} value={type}>{type}</option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-600">Meeting title (optional)</label>
+                  <input
+                    type="text"
+                    value={meetingData.title}
+                    onChange={(e) => setMeetingData({ ...meetingData, title: e.target.value })}
+                    placeholder="e.g. Design Strategy Workshop"
+                    className="w-full px-5 py-4 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all text-lg bg-white"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-600">Meeting type (optional)</label>
+                  <select
+                    value={meetingData.type}
+                    onChange={(e) => setMeetingData({ ...meetingData, type: e.target.value })}
+                    className="w-full px-5 py-4 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all text-lg appearance-none bg-white"
+                  >
+                    <option value="">Select type...</option>
+                    {MEETING_TYPES.map(type => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
-            </div>
 
-            {/* Meeting Presets */}
-            <div className="flex flex-wrap gap-3">
+              {/* Meeting Presets */}
+              <div className="flex flex-wrap gap-3">
 
-              {/* Custom templates */}
-              {customTemplates.map(tmpl => {
-                const tmplAttendees = teamMembers.filter(a => tmpl.attendeeIds.includes(a.id));
-                const allSelected = tmplAttendees.length > 0 && tmplAttendees.every(m => meetingData.attendees.some(a => a.id === m.id));
-                return (
-                  <div key={tmpl.id} className="relative group">
-                    <button
-                      onClick={() => applyTemplate(tmpl)}
-                      className={`flex items-center gap-2 px-5 py-2.5 rounded-xl border text-sm font-medium transition-colors ${allSelected ? 'bg-brand border-brand text-white' : 'border-brand/20 bg-brand/5 text-brand hover:bg-brand/10'}`}
-                    >
-                      <Zap size={14} />
-                      {tmpl.name}
-                    </button>
-                    <div className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                {/* Custom templates */}
+                {customTemplates.map(tmpl => {
+                  const tmplAttendees = teamMembers.filter(a => tmpl.attendeeIds.includes(a.id));
+                  const allSelected = tmplAttendees.length > 0 && tmplAttendees.every(m => meetingData.attendees.some(a => a.id === m.id));
+                  return (
+                    <div key={tmpl.id} className="relative group">
                       <button
-                        onClick={(e) => { e.stopPropagation(); setEditingTemplateId(tmpl.id); setTemplateForm({ name: tmpl.name, title: tmpl.title, type: tmpl.type, attendeeIds: tmpl.attendeeIds }); setShowTemplateModal(true); }}
-                        className="w-5 h-5 bg-blue-500 text-white rounded-full flex items-center justify-center shadow-sm"
-                        title="Edit template"
+                        onClick={() => applyTemplate(tmpl)}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl border text-sm font-medium transition-colors ${allSelected ? 'bg-brand border-brand text-white' : 'border-brand/20 bg-brand/5 text-brand hover:bg-brand/10'}`}
                       >
-                        <Pencil size={9} />
+                        <Zap size={14} />
+                        {tmpl.name}
                       </button>
+                      <div className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setEditingTemplateId(tmpl.id); setTemplateForm({ name: tmpl.name, title: tmpl.title, type: tmpl.type, attendeeIds: tmpl.attendeeIds }); setShowTemplateModal(true); }}
+                          className="w-5 h-5 bg-blue-500 text-white rounded-full flex items-center justify-center shadow-sm"
+                          title="Edit template"
+                        >
+                          <Pencil size={9} />
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
 
-              {/* Add template button */}
-              <button
-                onClick={() => { setEditingTemplateId(null); setTemplateForm({ name: '', title: '', type: '', attendeeIds: [] }); setShowTemplateModal(true); }}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-dashed border-gray-300 text-sm font-medium text-gray-400 hover:border-brand/40 hover:text-brand transition-colors"
-              >
-                <Plus size={14} />
-                Create template
-              </button>
-            </div>
+                {/* Add template button */}
+                <button
+                  onClick={() => { setEditingTemplateId(null); setTemplateForm({ name: '', title: '', type: '', attendeeIds: [] }); setShowTemplateModal(true); }}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-dashed border-gray-300 text-sm font-medium text-gray-400 hover:border-brand/40 hover:text-brand transition-colors"
+                >
+                  <Plus size={14} />
+                  Create template
+                </button>
+              </div>
 
-            {/* Template Creation Modal */}
-            {showTemplateModal && (
-              <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowTemplateModal(false)}>
-                <div className="bg-white rounded-3xl shadow-2xl max-w-[600px] w-full max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                  <div className="p-8 space-y-6">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-2xl font-medium">{editingTemplateId ? 'Edit template' : 'Create template'}</h3>
-                      <button onClick={() => { setShowTemplateModal(false); setEditingTemplateId(null); }} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-                        <X size={20} />
-                      </button>
-                    </div>
-
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-600">Template name *</label>
-                        <input
-                          type="text"
-                          value={templateForm.name}
-                          onChange={e => setTemplateForm(prev => ({ ...prev, name: e.target.value }))}
-                          placeholder="e.g. Weekly Standup"
-                          className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all bg-white"
-                        />
+              {/* Template Creation Modal */}
+              {showTemplateModal && (
+                <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowTemplateModal(false)}>
+                  <div className="bg-white rounded-3xl shadow-2xl max-w-[600px] w-full max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                    <div className="p-8 space-y-6">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-2xl font-medium">{editingTemplateId ? 'Edit template' : 'Create template'}</h3>
+                        <button onClick={() => { setShowTemplateModal(false); setEditingTemplateId(null); }} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                          <X size={20} />
+                        </button>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-4">
                         <div className="space-y-2">
-                          <label className="text-sm font-medium text-gray-600">Meeting title</label>
+                          <label className="text-sm font-medium text-gray-600">Template name *</label>
                           <input
                             type="text"
-                            value={templateForm.title}
-                            onChange={e => setTemplateForm(prev => ({ ...prev, title: e.target.value }))}
-                            placeholder="Auto-fill title"
+                            value={templateForm.name}
+                            onChange={e => setTemplateForm(prev => ({ ...prev, name: e.target.value }))}
+                            placeholder="e.g. Weekly Standup"
                             className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all bg-white"
                           />
                         </div>
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium text-gray-600">Meeting type</label>
-                          <select
-                            value={templateForm.type}
-                            onChange={e => setTemplateForm(prev => ({ ...prev, type: e.target.value }))}
-                            className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all appearance-none bg-white"
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium text-gray-600">Meeting title</label>
+                            <input
+                              type="text"
+                              value={templateForm.title}
+                              onChange={e => setTemplateForm(prev => ({ ...prev, title: e.target.value }))}
+                              placeholder="Auto-fill title"
+                              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all bg-white"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium text-gray-600">Meeting type</label>
+                            <select
+                              value={templateForm.type}
+                              onChange={e => setTemplateForm(prev => ({ ...prev, type: e.target.value }))}
+                              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all appearance-none bg-white"
+                            >
+                              <option value="">Select type...</option>
+                              {MEETING_TYPES.map(type => (
+                                <option key={type} value={type}>{type}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center">
+                            <label className="text-sm font-medium text-gray-600">Attendees</label>
+                            <span className="text-xs text-gray-400">{templateForm.attendeeIds.length} selected</span>
+                          </div>
+                          <div className="max-h-[280px] overflow-y-auto space-y-4 border border-gray-100 rounded-xl p-4">
+                            {DEPARTMENTS.map(dept => {
+                              const deptAttendees = teamMembers.filter(a => a.department === dept);
+                              return (
+                                <div key={dept}>
+                                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{dept}</p>
+                                  <div className="flex flex-wrap gap-2">
+                                    {deptAttendees.map(att => {
+                                      const isSelected = templateForm.attendeeIds.includes(att.id);
+                                      return (
+                                        <button
+                                          key={att.id}
+                                          onClick={() => setTemplateForm(prev => ({
+                                            ...prev,
+                                            attendeeIds: isSelected
+                                              ? prev.attendeeIds.filter(id => id !== att.id)
+                                              : [...prev.attendeeIds, att.id]
+                                          }))}
+                                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${isSelected ? 'bg-brand text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                        >
+                                          {att.name}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-between gap-3 pt-2">
+                        {editingTemplateId && (
+                          <button
+                            onClick={() => { handleDeleteTemplate(editingTemplateId); setShowTemplateModal(false); setEditingTemplateId(null); }}
+                            className="px-6 py-3 rounded-xl text-red-500 hover:bg-red-50 font-medium transition-colors flex items-center gap-2"
                           >
-                            <option value="">Select type...</option>
-                            {MEETING_TYPES.map(type => (
-                              <option key={type} value={type}>{type}</option>
+                            <Trash2 size={16} />
+                            Delete
+                          </button>
+                        )}
+                        <div className="flex gap-3 ml-auto">
+                          <button
+                            onClick={() => { setShowTemplateModal(false); setEditingTemplateId(null); }}
+                            className="px-6 py-3 rounded-xl text-gray-500 hover:bg-gray-100 font-medium transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleSaveTemplate}
+                            disabled={!templateForm.name.trim()}
+                            className="px-6 py-3 rounded-xl bg-brand text-white font-medium hover:bg-brand-dark transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            {editingTemplateId ? 'Update template' : 'Save template'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-10">
+                <div className="flex justify-between items-end border-b border-gray-100 pb-4">
+                  <h3 className="text-2xl font-medium">Attendees</h3>
+                  <span className="text-sm text-gray-400 font-medium">{meetingData.attendees.length} selected</span>
+                </div>
+
+                {renderAttendeeGroup("Innovation Coaches")}
+                {renderAttendeeGroup("Designer")}
+                {renderAttendeeGroup("Business Support")}
+                {renderAttendeeGroup("Administrators")}
+                {renderAttendeeGroup("Researchers and IP")}
+              </div>
+
+              {/* Manage Team Modal */}
+              {showManageTeam && (
+                <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowManageTeam(false)}>
+                  <div className="bg-white rounded-3xl shadow-2xl max-w-[650px] w-full max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                    <div className="p-8 space-y-6">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-2xl font-medium">Manage team</h3>
+                        <button onClick={() => setShowManageTeam(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                          <X size={20} />
+                        </button>
+                      </div>
+
+                      <div className="space-y-4 border-b border-gray-100 pb-6">
+                        <h4 className="text-sm font-semibold text-gray-600">Add new member</h4>
+                        <div className="grid grid-cols-2 gap-3">
+                          <input
+                            type="text"
+                            value={addMemberForm.name}
+                            onChange={e => setAddMemberForm(prev => ({ ...prev, name: e.target.value }))}
+                            placeholder="Name"
+                            className="px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all"
+                          />
+                          <input
+                            type="email"
+                            value={addMemberForm.email}
+                            onChange={e => setAddMemberForm(prev => ({ ...prev, email: e.target.value }))}
+                            placeholder="Email"
+                            className="px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all"
+                          />
+                        </div>
+                        <div className="flex gap-3">
+                          <select
+                            value={addMemberForm.department}
+                            onChange={e => setAddMemberForm(prev => ({ ...prev, department: e.target.value }))}
+                            className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all appearance-none bg-white"
+                          >
+                            {DEPARTMENTS.map(dept => (
+                              <option key={dept} value={dept}>{dept}</option>
                             ))}
                           </select>
+                          <button
+                            onClick={handleAddMember}
+                            disabled={!addMemberForm.name.trim() || !addMemberForm.email.trim()}
+                            className="px-6 py-2.5 rounded-xl bg-brand text-white text-sm font-medium hover:bg-brand-dark transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+                          >
+                            <Plus size={14} />
+                            Add
+                          </button>
                         </div>
                       </div>
 
-                      <div className="space-y-3">
-                        <div className="flex justify-between items-center">
-                          <label className="text-sm font-medium text-gray-600">Attendees</label>
-                          <span className="text-xs text-gray-400">{templateForm.attendeeIds.length} selected</span>
-                        </div>
-                        <div className="max-h-[280px] overflow-y-auto space-y-4 border border-gray-100 rounded-xl p-4">
-                          {DEPARTMENTS.map(dept => {
-                            const deptAttendees = teamMembers.filter(a => a.department === dept);
-                            return (
-                              <div key={dept}>
-                                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{dept}</p>
-                                <div className="flex flex-wrap gap-2">
-                                  {deptAttendees.map(att => {
-                                    const isSelected = templateForm.attendeeIds.includes(att.id);
-                                    return (
-                                      <button
-                                        key={att.id}
-                                        onClick={() => setTemplateForm(prev => ({
-                                          ...prev,
-                                          attendeeIds: isSelected
-                                            ? prev.attendeeIds.filter(id => id !== att.id)
-                                            : [...prev.attendeeIds, att.id]
-                                        }))}
-                                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${isSelected ? 'bg-brand text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                                      >
-                                        {att.name}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex justify-between gap-3 pt-2">
-                      {editingTemplateId && (
-                        <button
-                          onClick={() => { handleDeleteTemplate(editingTemplateId); setShowTemplateModal(false); setEditingTemplateId(null); }}
-                          className="px-6 py-3 rounded-xl text-red-500 hover:bg-red-50 font-medium transition-colors flex items-center gap-2"
-                        >
-                          <Trash2 size={16} />
-                          Delete
-                        </button>
-                      )}
-                      <div className="flex gap-3 ml-auto">
-                        <button
-                          onClick={() => { setShowTemplateModal(false); setEditingTemplateId(null); }}
-                          className="px-6 py-3 rounded-xl text-gray-500 hover:bg-gray-100 font-medium transition-colors"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={handleSaveTemplate}
-                          disabled={!templateForm.name.trim()}
-                          className="px-6 py-3 rounded-xl bg-brand text-white font-medium hover:bg-brand-dark transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          {editingTemplateId ? 'Update template' : 'Save template'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-10">
-              <div className="flex justify-between items-end border-b border-gray-100 pb-4">
-                <h3 className="text-2xl font-medium">Attendees</h3>
-                <span className="text-sm text-gray-400 font-medium">{meetingData.attendees.length} selected</span>
-              </div>
-
-              {renderAttendeeGroup("Innovation Coaches")}
-              {renderAttendeeGroup("Designer")}
-              {renderAttendeeGroup("Business Support")}
-              {renderAttendeeGroup("Administrators")}
-              {renderAttendeeGroup("Researchers and IP")}
-            </div>
-
-            {/* Manage Team Modal */}
-            {showManageTeam && (
-              <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowManageTeam(false)}>
-                <div className="bg-white rounded-3xl shadow-2xl max-w-[650px] w-full max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                  <div className="p-8 space-y-6">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-2xl font-medium">Manage team</h3>
-                      <button onClick={() => setShowManageTeam(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-                        <X size={20} />
-                      </button>
-                    </div>
-
-                    <div className="space-y-4 border-b border-gray-100 pb-6">
-                      <h4 className="text-sm font-semibold text-gray-600">Add new member</h4>
-                      <div className="grid grid-cols-2 gap-3">
-                        <input
-                          type="text"
-                          value={addMemberForm.name}
-                          onChange={e => setAddMemberForm(prev => ({ ...prev, name: e.target.value }))}
-                          placeholder="Name"
-                          className="px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all"
-                        />
-                        <input
-                          type="email"
-                          value={addMemberForm.email}
-                          onChange={e => setAddMemberForm(prev => ({ ...prev, email: e.target.value }))}
-                          placeholder="Email"
-                          className="px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all"
-                        />
-                      </div>
-                      <div className="flex gap-3">
-                        <select
-                          value={addMemberForm.department}
-                          onChange={e => setAddMemberForm(prev => ({ ...prev, department: e.target.value }))}
-                          className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all appearance-none bg-white"
-                        >
-                          {DEPARTMENTS.map(dept => (
-                            <option key={dept} value={dept}>{dept}</option>
-                          ))}
-                        </select>
-                        <button
-                          onClick={handleAddMember}
-                          disabled={!addMemberForm.name.trim() || !addMemberForm.email.trim()}
-                          className="px-6 py-2.5 rounded-xl bg-brand text-white text-sm font-medium hover:bg-brand-dark transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
-                        >
-                          <Plus size={14} />
-                          Add
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-6">
-                      {DEPARTMENTS.map(dept => {
-                        const members = teamMembers.filter(m => m.department === dept);
-                        return (
-                          <div key={dept} className="space-y-2">
-                            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{dept} ({members.length})</p>
-                            <div className="space-y-1">
-                              {members.map(member => (
-                                <div key={member.id} className="flex items-center justify-between group px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors">
-                                  <div className="flex-1 min-w-0">
-                                    <span className="text-sm font-medium text-gray-700">{member.name}</span>
-                                    <span className="text-xs text-gray-400 ml-2 truncate">{member.email}</span>
+                      <div className="space-y-6">
+                        {DEPARTMENTS.map(dept => {
+                          const members = teamMembers.filter(m => m.department === dept);
+                          return (
+                            <div key={dept} className="space-y-2">
+                              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{dept} ({members.length})</p>
+                              <div className="space-y-1">
+                                {members.map(member => (
+                                  <div key={member.id} className="flex items-center justify-between group px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors">
+                                    <div className="flex-1 min-w-0">
+                                      <span className="text-sm font-medium text-gray-700">{member.name}</span>
+                                      <span className="text-xs text-gray-400 ml-2 truncate">{member.email}</span>
+                                    </div>
+                                    <button
+                                      onClick={() => handleRemoveMember(member.id)}
+                                      className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                                      title="Remove member"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
                                   </div>
-                                  <button
-                                    onClick={() => handleRemoveMember(member.id)}
-                                    className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
-                                    title="Remove member"
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
-                                </div>
-                              ))}
-                              {members.length === 0 && <p className="text-xs text-gray-300 italic px-3 py-2">No members</p>}
+                                ))}
+                                {members.length === 0 && <p className="text-xs text-gray-300 italic px-3 py-2">No members</p>}
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/80 backdrop-blur-xl border-t border-gray-100 px-8 py-4">
-              <div className="max-w-[1000px] mx-auto flex items-center justify-between">
-                <button
-                  onClick={() => setMeetingData({ title: '', type: '', attendees: [], transcription: [] })}
-                  className="text-gray-400 hover:text-red-500 font-medium px-4 py-2 transition-colors"
-                >
-                  Clear selection
-                </button>
-                <button
-                  onClick={() => setShowManageTeam(true)}
-                  className="text-gray-400 hover:text-brand font-medium px-4 py-2 transition-colors flex items-center gap-2"
-                >
-                  <Settings size={16} />
-                  Manage attendees
-                </button>
-                <button
-                  onClick={startRecordingSession}
-                  className="bg-brand hover:bg-brand-dark text-white px-10 py-5 rounded-2xl font-medium flex items-center gap-3 transition-all shadow-xl shadow-brand/10"
-                >
-                  <Mic size={22} />
-                  Start recording
-                </button>
+              <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/80 backdrop-blur-xl border-t border-gray-100 px-8 py-4">
+                <div className="max-w-[1000px] mx-auto flex items-center justify-between">
+                  <button
+                    onClick={() => setMeetingData({ title: '', type: '', attendees: [], transcription: [] })}
+                    className="text-gray-400 hover:text-red-500 font-medium px-4 py-2 transition-colors"
+                  >
+                    Clear selection
+                  </button>
+                  <button
+                    onClick={() => setShowManageTeam(true)}
+                    className="text-gray-400 hover:text-brand font-medium px-4 py-2 transition-colors flex items-center gap-2"
+                  >
+                    <Settings size={16} />
+                    Manage attendees
+                  </button>
+                  <button
+                    onClick={startRecordingSession}
+                    className="bg-brand hover:bg-brand-dark text-white px-10 py-5 rounded-2xl font-medium flex items-center gap-3 transition-all shadow-xl shadow-brand/10"
+                  >
+                    <Mic size={22} />
+                    Start recording
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )
+          )
         }
 
         {

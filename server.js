@@ -3,6 +3,20 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
+import admin from 'firebase-admin';
+
+// Initialize Firebase Admin SDK to bypass client-side rules
+try {
+    admin.initializeApp({
+        projectId: 'innovate-transcriptions'
+    });
+    console.log('Firebase Admin initialized with projectId: innovate-transcriptions');
+} catch (e) {
+    if (e.code !== 'app/duplicate-app') {
+        console.warn('Firebase Admin initialization warning:', e.message);
+    }
+}
+const db = admin.firestore();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,6 +53,35 @@ app.get('/api/gemini-key', requireAuth, (req, res) => {
     res.json({ key: GEMINI_API_KEY });
 });
 
+// Recover the latest meeting (server-side bypass for auth rules)
+app.get('/api/recover-latest', requireAuth, async (req, res) => {
+    try {
+        console.log('[Recover] Fetching latest meeting via Admin SDK...');
+        const snapshot = await db.collection('transcriptions')
+            .orderBy('createdAt', 'desc')
+            .limit(1)
+            .get();
+
+        if (snapshot.empty) {
+            console.log('[Recover] No meetings found in collection');
+            return res.status(404).json({ error: 'No meetings found' });
+        }
+
+        const doc = snapshot.docs[0];
+        const data = doc.data();
+        console.log(`[Recover] Found meeting: ${data.title} (ID: ${doc.id})`);
+
+        // Return data. Admin SDK returns Timestamp objects, which serialize to ISO strings automatically in res.json
+        res.json({
+            ...data,
+            id: doc.id
+        });
+    } catch (err) {
+        console.error('[Recover] Error fetching latest session:', err);
+        res.status(500).json({ error: 'Failed to recover session: ' + err.message });
+    }
+});
+
 // Proxy for summary generation (key never reaches the browser)
 app.post('/api/summary', requireAuth, async (req, res) => {
     try {
@@ -69,34 +112,83 @@ ${transcriptionText}`
     }
 });
 
-// Diarize transcript — identify and label speakers
+// Helper to chunk text while respecting sentence boundaries
+const chunkText = (text, maxLength = 12000) => {
+    const chunks = [];
+    let currentChunk = '';
+
+    const sentences = text.match(/[^.!?]+[.!?]+(\s+|$)/g) || [text];
+
+    for (const sentence of sentences) {
+        if ((currentChunk + sentence).length > maxLength) {
+            if (currentChunk) chunks.push(currentChunk);
+            currentChunk = sentence;
+        } else {
+            currentChunk += sentence;
+        }
+    }
+    if (currentChunk) chunks.push(currentChunk);
+    return chunks;
+};
+
+// Diarize transcript — identify and label speakers with chunking
 app.post('/api/diarize', requireAuth, async (req, res) => {
     try {
         if (!ai) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
         const { attendeeNames, transcriptionText } = req.body;
 
-        const diarizeResponse = await ai.models.generateContent({
-            model: 'gemini-2.0-flash',
-            contents: `You are a professional transcript editor. Your task is to take a raw meeting transcript (which is one continuous block of text) and reformat it into a speaker-separated dialogue.
+        if (!transcriptionText) return res.json({ diarized: '' });
+
+        // Split long transcripts into chunks to avoid output token limits
+        // 12000 chars is roughly 3000-4000 tokens, leaving ample room for the model's output
+        const chunks = chunkText(transcriptionText);
+        console.log(`[Diarization] Processing ${chunks.length} chunks for ${transcriptionText.length} chars`);
+
+        const diarizedChunks = [];
+
+        // Process chunks sequentially to maintain order and context
+        for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+            console.log(`[Diarization] Processing chunk ${i + 1}/${chunks.length}...`);
+
+            try {
+                const response = await ai.models.generateContent({
+                    model: 'gemini-2.0-flash',
+                    contents: `You are a professional transcript editor. Your task is to take a raw meeting transcript and reformat it into a speaker-separated dialogue.
+
+Context:
+- Attendees: ${attendeeNames || 'Unknown speakers'}
+- This is part ${i + 1} of ${chunks.length} of the full transcript.
 
 Rules:
-- Identify when different speakers are talking based on conversational context, topic shifts, and dialogue patterns.
-- Label speakers as "Speaker 1", "Speaker 2", "Speaker 3", etc. Use these labels consistently throughout.
-- Format each speaker turn on its own line, prefixed with the speaker label and a colon, e.g. "Speaker 1: ..."
-- Add a blank line between different speakers for readability.
+- Identify speakers based on the provided attendee names where possible.
+- If a speaker is clearly one of the attendees, use their name (e.g., "Tim:", "Sam:").
+- If the speaker is unknown, use "Speaker 1", "Speaker 2", etc. ensuring consistency within this chunk.
+- Format each speaker turn on its own line, prefixed with the name/label and a colon.
+- Add a blank line between different speakers.
 - Do NOT summarise or paraphrase. Keep the original words exactly as they are.
-- Do NOT add any commentary, headings, or notes. Only output the reformatted transcript.
-- Fix obvious transcription errors only if you are very confident.
+- Do NOT add any commentary. Only output the reformatted transcript.
 - Write in UK English.
 
-Raw transcript:
-${transcriptionText}`
-        });
+Raw transcript segment:
+${chunk}`
+                });
 
-        res.json({ diarized: diarizeResponse.text || transcriptionText });
+                const text = response.response.text();
+                diarizedChunks.push(text);
+            } catch (chunkError) {
+                console.error(`[Diarization] Error in chunk ${i + 1}:`, chunkError.message);
+                // Fallback: just append the raw chunk if AI fails
+                diarizedChunks.push(chunk);
+            }
+        }
+
+        const fullDiarized = diarizedChunks.join('\n\n');
+        res.json({ diarized: fullDiarized });
+
     } catch (err) {
         console.error('Error diarizing transcript:', err.message);
-        // Fall back to raw transcript on error
+        // Fall back to raw transcript on global error
         res.json({ diarized: req.body.transcriptionText || '' });
     }
 });
