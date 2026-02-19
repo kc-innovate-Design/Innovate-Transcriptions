@@ -586,8 +586,9 @@ const App: React.FC = () => {
     const dateStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
     const attendeeNames = meetingData.attendees.map(a => a.name).join(', ');
 
-    // Generate AI summary + speaker-separated transcript in parallel
+    // Generate AI summary, insights, and speaker-separated transcript in parallel
     let summaryText = '';
+    let insightsText = '';
     let diarizedText = transcriptionText;
     if (meetingData.transcription.length > 0) {
       try {
@@ -597,13 +598,18 @@ const App: React.FC = () => {
           'Authorization': `Bearer ${token}`
         };
 
-        // Run summary and diarization in parallel
-        const [summaryResult, diarizeResult] = await Promise.allSettled([
+        // Run summary, insights, and diarization in parallel
+        const [summaryResult, insightsResult, diarizeResult] = await Promise.allSettled([
           fetch('/api/summary', {
             method: 'POST',
             headers,
             body: JSON.stringify({ meetingTitle, meetingType, attendeeNames, transcriptionText })
           }).then(r => r.ok ? r.json() : Promise.reject('Summary request failed')),
+          fetch('/api/insights', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ meetingTitle, meetingType, attendeeNames, transcriptionText })
+          }).then(r => r.ok ? r.json() : Promise.reject('Insights request failed')),
           fetch('/api/diarize', {
             method: 'POST',
             headers,
@@ -619,6 +625,12 @@ const App: React.FC = () => {
           summaryText = 'Summary could not be generated for this meeting.';
         }
 
+        if (insightsResult.status === 'fulfilled') {
+          insightsText = insightsResult.value.insights || '';
+        } else {
+          console.error("Error extracting insights:", insightsResult.reason);
+        }
+
         if (diarizeResult.status === 'fulfilled') {
           diarizedText = diarizeResult.value.diarized || transcriptionText;
         } else {
@@ -630,22 +642,25 @@ const App: React.FC = () => {
       }
     }
 
-    // Convert markdown bullet points to HTML for the email
-    const summaryHtml = summaryText
+    // Helper to convert markdown text to HTML for email
+    const markdownToHtml = (text: string) => text
       .split('\n')
       .map(line => {
         const trimmed = line.trim();
         if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-          return `<li style="margin-bottom: 6px;">${trimmed.substring(2)}</li>`;
+          return `<li style="margin-bottom: 6px;">${trimmed.substring(2).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')}</li>`;
         }
         if (trimmed.startsWith('## ') || trimmed.startsWith('### ')) {
           const heading = trimmed.replace(/^#+\s/, '');
           return `<h4 style="margin: 16px 0 8px 0; color: #121622; font-size: 15px;">${heading}</h4>`;
         }
         if (trimmed === '') return '';
-        return `<p style="margin: 4px 0;">${trimmed}</p>`;
+        return `<p style="margin: 4px 0;">${trimmed.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')}</p>`;
       })
       .join('\n');
+
+    const summaryHtml = markdownToHtml(summaryText);
+    const insightsHtml = markdownToHtml(insightsText);
 
     // Format diarized transcript for email (convert line breaks to HTML)
     const diarizedHtml = diarizedText
@@ -671,6 +686,7 @@ const App: React.FC = () => {
         transcription: meetingData.transcription,
         diarizedTranscription: diarizedText,
         summary: summaryText,
+        insights: insightsText,
         duration: recordingTime,
         createdAt: serverTimestamp(),
         createdBy: user?.uid,
@@ -699,6 +715,15 @@ const App: React.FC = () => {
                     <tr><td style="padding: 8px 0; color: #888;">Duration</td><td style="padding: 8px 0;">${durationStr}</td></tr>
                     <tr><td style="padding: 8px 0; color: #888;">Attendees</td><td style="padding: 8px 0;">${attendeeNames}</td></tr>
                   </table>
+
+                  ${insightsText ? `
+                  <div style="background: #EEF2FF; border-left: 4px solid #6366F1; border-radius: 0 12px 12px 0; padding: 20px 24px; margin: 24px 0;">
+                    <h3 style="margin: 0 0 12px 0; font-size: 16px; color: #6366F1;">🔍 Key Insights</h3>
+                    <div style="font-size: 14px; line-height: 1.7; color: #333;">
+                      ${insightsHtml}
+                    </div>
+                  </div>
+                  ` : ''}
 
                   ${summaryText ? `
                   <div style="background: #FFF7ED; border-left: 4px solid #F36D5B; border-radius: 0 12px 12px 0; padding: 20px 24px; margin: 24px 0;">

@@ -193,6 +193,50 @@ ${chunk}`
     }
 });
 
+// Extract key insights / trigger questions from the transcript
+app.post('/api/insights', requireAuth, async (req, res) => {
+    try {
+        if (!ai) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
+        const { meetingTitle, meetingType, attendeeNames, transcriptionText } = req.body;
+
+        if (!transcriptionText) return res.json({ insights: '' });
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.0-flash',
+            contents: `You are a meeting analyst specialising in product design and innovation. Analyse the following meeting transcript and extract key insights, organised into the categories below.
+
+For each category, identify the specific question or prompt that triggered the discussion, then summarise the key points made in response. Quote important phrases directly from the transcript where possible.
+
+Categories:
+1. **User Needs** — How would users use the product? What do they need it to do? What problems are they trying to solve?
+2. **Feature Requests** — What are the key features discussed? What functionality is most important? What should the product include?
+3. **Competitor Analysis** — What products are currently on the market? What alternatives exist? What do competitors offer?
+4. **Pros & Cons** — What works well about existing solutions? What doesn't? Advantages and disadvantages discussed.
+5. **Pain Points** — What frustrates users? What's missing? Where do current solutions fall short?
+
+Rules:
+- Only include categories where relevant discussion was found. Skip empty categories entirely.
+- For each insight, start with the trigger question/topic in bold, followed by the key points.
+- Use bullet points for clarity.
+- Write in UK English.
+- Keep it concise but ensure no key insight is missed.
+- If no meaningful insights are found for any category, respond with "No key insights identified in this meeting."
+
+Meeting: ${meetingTitle}
+Type: ${meetingType}
+Attendees: ${attendeeNames}
+
+Transcript:
+${transcriptionText}`
+        });
+
+        res.json({ insights: response.text || '' });
+    } catch (err) {
+        console.error('Error extracting insights:', err.message);
+        res.status(500).json({ error: 'Failed to extract insights' });
+    }
+});
+
 // --- Serve static frontend in production ---
 const distPath = path.join(__dirname, 'dist');
 app.use(express.static(distPath));
