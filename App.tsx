@@ -194,6 +194,11 @@ const App: React.FC = () => {
   const isReconnectingRef = useRef(false);
   const aiRef = useRef<GoogleGenAI | null>(null);
   const audioStreamRef = useRef<MediaStream | null>(null);
+  // Audio pipeline node refs (to prevent duplicate pipelines on reconnect)
+  const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const reconnectCountRef = useRef(0);
+  const totalChunksSentRef = useRef(0);
 
   useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
   useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
@@ -252,10 +257,20 @@ const App: React.FC = () => {
 
   // Cleanup session and AudioContext
   const cleanupSession = () => {
+    console.log(`[Recording][${new Date().toISOString()}] cleanupSession — total chunks sent: ${totalChunksSentRef.current}, reconnects: ${reconnectCountRef.current}`);
     isReconnectingRef.current = false;
     resumptionHandleRef.current = null;
     aiRef.current = null;
     audioStreamRef.current = null;
+    // Disconnect audio pipeline nodes
+    try {
+      scriptProcessorRef.current?.disconnect();
+      scriptProcessorRef.current = null;
+    } catch (e) { /* ignore */ }
+    try {
+      audioSourceRef.current?.disconnect();
+      audioSourceRef.current = null;
+    } catch (e) { /* ignore */ }
     try {
       if (sessionRef.current) {
         sessionRef.current.close?.();
@@ -280,6 +295,8 @@ const App: React.FC = () => {
     }
     analyserRef.current = null;
     setAudioLevels(new Array(32).fill(0));
+    reconnectCountRef.current = 0;
+    totalChunksSentRef.current = 0;
   };
 
   // Animated step transition
@@ -377,33 +394,41 @@ const App: React.FC = () => {
       },
       callbacks: {
         onopen: () => {
-          console.log("[Recording] Gemini session OPEN — setting up audio pipeline");
+          console.log(`[Recording][${new Date().toISOString()}] Gemini session OPEN — isReconnect: ${!!resumeHandle}`);
           isReconnectingRef.current = false;
           setConnectionStatus('connected');
-          const source = inputAudioContext.createMediaStreamSource(stream);
-          const scriptProcessor = inputAudioContext.createScriptProcessor(4096, 1, 1);
-          let audioChunkCount = 0;
 
-          scriptProcessor.onaudioprocess = (e) => {
-            if (isRecordingRef.current && !isPausedRef.current) {
-              const inputData = e.inputBuffer.getChannelData(0);
-              const pcmBlob = createBlob(inputData);
-              audioChunkCount++;
-              if (audioChunkCount % 50 === 1) {
-                console.log(`[Recording] Sending audio chunk #${audioChunkCount}`);
-              }
-              sessionRef.current?.sendRealtimeInput({
-                audio: {
-                  data: pcmBlob.data,
-                  mimeType: pcmBlob.mimeType
+          // Only create audio pipeline once — reuse on reconnect
+          if (!scriptProcessorRef.current) {
+            console.log('[Recording] Creating new audio pipeline');
+            const source = inputAudioContext.createMediaStreamSource(stream);
+            const scriptProcessor = inputAudioContext.createScriptProcessor(4096, 1, 1);
+
+            scriptProcessor.onaudioprocess = (e) => {
+              if (isRecordingRef.current && !isPausedRef.current) {
+                const inputData = e.inputBuffer.getChannelData(0);
+                const pcmBlob = createBlob(inputData);
+                totalChunksSentRef.current++;
+                if (totalChunksSentRef.current % 100 === 1) {
+                  console.log(`[Recording] Audio chunk #${totalChunksSentRef.current}`);
                 }
-              });
-            }
-          };
+                sessionRef.current?.sendRealtimeInput({
+                  audio: {
+                    data: pcmBlob.data,
+                    mimeType: pcmBlob.mimeType
+                  }
+                });
+              }
+            };
 
-          source.connect(scriptProcessor);
-          scriptProcessor.connect(inputAudioContext.destination);
-          console.log("[Recording] Audio pipeline connected");
+            source.connect(scriptProcessor);
+            scriptProcessor.connect(inputAudioContext.destination);
+            scriptProcessorRef.current = scriptProcessor;
+            audioSourceRef.current = source;
+            console.log('[Recording] Audio pipeline connected');
+          } else {
+            console.log('[Recording] Reusing existing audio pipeline after reconnect');
+          }
         },
         onmessage: async (message: LiveServerMessage) => {
           console.log("[Recording] Gemini message received:", JSON.stringify(message).substring(0, 300));
@@ -428,11 +453,11 @@ const App: React.FC = () => {
           }
         },
         onerror: (e: any) => {
-          console.error("[Recording] Gemini Error:", e?.message || e);
+          console.error(`[Recording][${new Date().toISOString()}] Gemini Error:`, e?.message || e);
           setConnectionStatus('disconnected');
         },
         onclose: (e: any) => {
-          console.log("[Recording] Gemini session closed — code:", e?.code, "reason:", e?.reason || "none");
+          console.log(`[Recording][${new Date().toISOString()}] Gemini session closed — code: ${e?.code}, reason: ${e?.reason || 'none'}, hasHandle: ${!!resumptionHandleRef.current}, chunks: ${totalChunksSentRef.current}`);
           // Auto-reconnect if we were still recording and have a resumption handle
           if (isRecordingRef.current && !isReconnectingRef.current && resumptionHandleRef.current) {
             console.log("[Recording] Unexpected close during recording — auto-reconnecting");
@@ -450,10 +475,14 @@ const App: React.FC = () => {
   const reconnectSession = async () => {
     if (isReconnectingRef.current) return; // Prevent concurrent reconnect attempts
     isReconnectingRef.current = true;
+    reconnectCountRef.current++;
     setConnectionStatus('reconnecting');
-    console.log("[Recording] Reconnecting with handle:", resumptionHandleRef.current?.substring(0, 20) + "...");
+    console.log(`[Recording][${new Date().toISOString()}] Reconnecting (#${reconnectCountRef.current}) with handle: ${resumptionHandleRef.current?.substring(0, 20)}...`);
 
-    // Close old session without tearing down audio
+    // Insert a gap marker so users know audio may have been missed
+    transcriptBufferRef.current.push(` [connection interrupted — some audio may have been missed] `);
+
+    // Close old session without tearing down audio pipeline
     try { sessionRef.current?.close?.(); } catch (e) { /* ignore */ }
     sessionRef.current = null;
 
@@ -466,9 +495,9 @@ const App: React.FC = () => {
       }
       const newSession = await connectToGemini(ai, stream, ctx, resumptionHandleRef.current);
       sessionRef.current = newSession;
-      console.log("[Recording] Reconnection successful");
+      console.log(`[Recording][${new Date().toISOString()}] Reconnection #${reconnectCountRef.current} successful`);
     } catch (err) {
-      console.error("[Recording] Reconnection failed:", err);
+      console.error(`[Recording][${new Date().toISOString()}] Reconnection failed:`, err);
       isReconnectingRef.current = false;
       setConnectionStatus('disconnected');
     }
@@ -1204,6 +1233,21 @@ ${diarizedHtml}
                       Finish recording
                     </button>
                   </div>
+                  {/* DEBUG: Force reconnect button — only on localhost */}
+                  {window.location.hostname === 'localhost' && (
+                    <div className="flex items-center justify-center gap-4 pt-2">
+                      <button
+                        onClick={() => { console.log('[DEBUG] Force reconnect triggered'); reconnectSession(); }}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors border border-purple-200"
+                      >
+                        <Zap size={14} />
+                        Force Reconnect (debug)
+                      </button>
+                      <span className="text-xs text-gray-400">
+                        Reconnects: {reconnectCountRef.current} | Chunks: {totalChunksSentRef.current}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="bg-brand/5 rounded-3xl p-8 flex items-center gap-5 border border-brand/10">
