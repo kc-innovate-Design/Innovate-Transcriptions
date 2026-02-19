@@ -1233,21 +1233,6 @@ ${diarizedHtml}
                       Finish recording
                     </button>
                   </div>
-                  {/* DEBUG: Force reconnect button — only on localhost */}
-                  {window.location.hostname === 'localhost' && (
-                    <div className="flex items-center justify-center gap-4 pt-2">
-                      <button
-                        onClick={() => { console.log('[DEBUG] Force reconnect triggered'); reconnectSession(); }}
-                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors border border-purple-200"
-                      >
-                        <Zap size={14} />
-                        Force Reconnect (debug)
-                      </button>
-                      <span className="text-xs text-gray-400">
-                        Reconnects: {reconnectCountRef.current} | Chunks: {totalChunksSentRef.current}
-                      </span>
-                    </div>
-                  )}
                 </div>
 
                 <div className="bg-brand/5 rounded-3xl p-8 flex items-center gap-5 border border-brand/10">
