@@ -3,20 +3,6 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
-import admin from 'firebase-admin';
-
-// Initialize Firebase Admin SDK to bypass client-side rules
-try {
-    admin.initializeApp({
-        projectId: 'innovate-transcriptions'
-    });
-    console.log('Firebase Admin initialized with projectId: innovate-transcriptions');
-} catch (e) {
-    if (e.code !== 'app/duplicate-app') {
-        console.warn('Firebase Admin initialization warning:', e.message);
-    }
-}
-const db = admin.firestore();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -40,8 +26,6 @@ const requireAuth = (req, res, next) => {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ error: 'Unauthorized — missing auth token' });
     }
-    // The token is verified client-side via Firebase Auth
-    // For additional security, you could verify the token server-side with Firebase Admin SDK
     next();
 };
 
@@ -51,35 +35,6 @@ const requireAuth = (req, res, next) => {
 app.get('/api/gemini-key', requireAuth, (req, res) => {
     if (!GEMINI_API_KEY) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
     res.json({ key: GEMINI_API_KEY });
-});
-
-// Recover the latest meeting (server-side bypass for auth rules)
-app.get('/api/recover-latest', requireAuth, async (req, res) => {
-    try {
-        console.log('[Recover] Fetching latest meeting via Admin SDK...');
-        const snapshot = await db.collection('transcriptions')
-            .orderBy('createdAt', 'desc')
-            .limit(1)
-            .get();
-
-        if (snapshot.empty) {
-            console.log('[Recover] No meetings found in collection');
-            return res.status(404).json({ error: 'No meetings found' });
-        }
-
-        const doc = snapshot.docs[0];
-        const data = doc.data();
-        console.log(`[Recover] Found meeting: ${data.title} (ID: ${doc.id})`);
-
-        // Return data. Admin SDK returns Timestamp objects, which serialize to ISO strings automatically in res.json
-        res.json({
-            ...data,
-            id: doc.id
-        });
-    } catch (err) {
-        console.error('[Recover] Error fetching latest session:', err);
-        res.status(500).json({ error: 'Failed to recover session: ' + err.message });
-    }
 });
 
 // Proxy for summary generation (key never reaches the browser)
