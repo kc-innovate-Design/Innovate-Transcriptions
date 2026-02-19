@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
@@ -38,14 +38,17 @@ app.get('/api/gemini-key', requireAuth, (req, res) => {
 });
 
 // Proxy for summary generation (key never reaches the browser)
+// For very long transcripts, we chunk and summarise each chunk, then produce a final summary
 app.post('/api/summary', requireAuth, async (req, res) => {
     try {
         if (!ai) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
         const { meetingTitle, meetingType, attendeeNames, transcriptionText } = req.body;
 
-        const summaryResponse = await ai.models.generateContent({
-            model: 'gemini-2.0-flash',
-            contents: `You are a professional meeting assistant. Summarise the following meeting transcription into a clear, concise summary. Include:
+        // If transcript is short enough, process in one go
+        if (transcriptionText.length <= 30000) {
+            const summaryResponse = await ai.models.generateContent({
+                model: 'gemini-2.0-flash',
+                contents: `You are a professional meeting assistant. Summarise the following meeting transcription into a clear, concise summary. Include:
 - Key discussion points
 - Decisions made
 - Action items (if any)
@@ -58,9 +61,46 @@ Attendees: ${attendeeNames}
 
 Transcription:
 ${transcriptionText}`
+            });
+            return res.json({ summary: summaryResponse.text || '' });
+        }
+
+        // For long transcripts: summarise each chunk, then merge summaries
+        const chunks = chunkText(transcriptionText, 25000);
+        console.log(`[Summary] Long transcript (${transcriptionText.length} chars) — processing ${chunks.length} chunks`);
+        const chunkSummaries = [];
+
+        for (let i = 0; i < chunks.length; i++) {
+            try {
+                const response = await ai.models.generateContent({
+                    model: 'gemini-2.0-flash',
+                    contents: `Summarise this section (part ${i + 1} of ${chunks.length}) of a meeting transcript. Include key points, decisions, and action items. Write in UK English. Be concise.\n\n${chunks[i]}`
+                });
+                chunkSummaries.push(response.text || '');
+            } catch (e) {
+                console.error(`[Summary] Chunk ${i + 1} failed:`, e.message);
+            }
+        }
+
+        // Merge chunk summaries into one final summary
+        const mergeResponse = await ai.models.generateContent({
+            model: 'gemini-2.0-flash',
+            contents: `You are a professional meeting assistant. Below are summaries from different sections of the same meeting. Merge them into one clear, concise overall summary. Remove duplicates. Include:
+- Key discussion points
+- Decisions made
+- Action items (if any)
+
+Write in UK English. Use bullet points for clarity.
+
+Meeting: ${meetingTitle}
+Type: ${meetingType}
+Attendees: ${attendeeNames}
+
+Section summaries:
+${chunkSummaries.join('\n\n---\n\n')}`
         });
 
-        res.json({ summary: summaryResponse.text || '' });
+        res.json({ summary: mergeResponse.text || '' });
     } catch (err) {
         console.error('Error generating summary:', err.message);
         res.status(500).json({ error: 'Failed to generate summary' });
@@ -149,6 +189,7 @@ ${chunk}`
 });
 
 // Extract key insights / trigger questions from the transcript
+// For very long transcripts, extract insights from each chunk then merge
 app.post('/api/insights', requireAuth, async (req, res) => {
     try {
         if (!ai) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
@@ -156,9 +197,7 @@ app.post('/api/insights', requireAuth, async (req, res) => {
 
         if (!transcriptionText) return res.json({ insights: '' });
 
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.0-flash',
-            contents: `You are a meeting analyst specialising in product design and innovation. Analyse the following meeting transcript and extract key insights, organised into the categories below.
+        const insightsPrompt = (text, context = '') => `You are a meeting analyst specialising in product design and innovation. Analyse the following meeting transcript${context} and extract key insights, organised into the categories below.
 
 For each category, identify the specific question or prompt that triggered the discussion, then summarise the key points made in response. Quote important phrases directly from the transcript where possible.
 
@@ -182,10 +221,40 @@ Type: ${meetingType}
 Attendees: ${attendeeNames}
 
 Transcript:
-${transcriptionText}`
+${text}`;
+
+        if (transcriptionText.length <= 30000) {
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.0-flash',
+                contents: insightsPrompt(transcriptionText)
+            });
+            return res.json({ insights: response.text || '' });
+        }
+
+        // For long transcripts: extract insights from each chunk, then merge
+        const chunks = chunkText(transcriptionText, 25000);
+        console.log(`[Insights] Long transcript (${transcriptionText.length} chars) — processing ${chunks.length} chunks`);
+        const chunkInsights = [];
+
+        for (let i = 0; i < chunks.length; i++) {
+            try {
+                const response = await ai.models.generateContent({
+                    model: 'gemini-2.0-flash',
+                    contents: insightsPrompt(chunks[i], ` (section ${i + 1} of ${chunks.length})`)
+                });
+                chunkInsights.push(response.text || '');
+            } catch (e) {
+                console.error(`[Insights] Chunk ${i + 1} failed:`, e.message);
+            }
+        }
+
+        // Merge all chunk insights into a deduplicated final set
+        const mergeResponse = await ai.models.generateContent({
+            model: 'gemini-2.0-flash',
+            contents: `Below are key insights extracted from different sections of the same meeting. Merge them into one comprehensive set of insights, removing duplicates and combining related points. Keep the same 5 categories (User Needs, Feature Requests, Competitor Analysis, Pros & Cons, Pain Points). Only include categories with content. Write in UK English.\n\n${chunkInsights.join('\n\n---\n\n')}`
         });
 
-        res.json({ insights: response.text || '' });
+        res.json({ insights: mergeResponse.text || '' });
     } catch (err) {
         console.error('Error extracting insights:', err.message);
         res.status(500).json({ error: 'Failed to extract insights' });
