@@ -947,7 +947,7 @@ ${diarizedHtml}
               <PlusIcon size={32} />
               Start New Meeting
             </button>
-            <p className="mt-6 text-xs text-gray-300 select-none">v{APP_VERSION}</p>
+            <p className="mt-6 text-xs text-gray-400 select-none">v{APP_VERSION}</p>
           </div>
         )}
 
