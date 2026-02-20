@@ -188,6 +188,75 @@ ${chunk}`
     }
 });
 
+// --- Meeting-type-specific insight categories ---
+const INSIGHT_CATEGORIES = {
+    'Client - Initial assessment': [
+        { name: 'User Needs', description: 'How would users use the product? What do they need it to do? What problems are they trying to solve?' },
+        { name: 'Feature Requests', description: 'What are the key features discussed? What functionality is most important? What should the product include?' },
+        { name: 'Competitor Analysis', description: 'What products are currently on the market? What alternatives exist? What do competitors offer?' },
+        { name: 'Pros & Cons', description: 'What works well about existing solutions? What doesn\'t? Advantages and disadvantages discussed.' },
+        { name: 'Pain Points', description: 'What frustrates users? What\'s missing? Where do current solutions fall short?' },
+    ],
+    'Client - Design stage kick off': [
+        { name: 'Design Requirements', description: 'What are the core design requirements? What must the product look like, feel like, or do?' },
+        { name: 'User Scenarios', description: 'What use cases or user scenarios were discussed? How will real users interact with the product?' },
+        { name: 'Technical Constraints', description: 'What technical limitations, material constraints, or manufacturing considerations were raised?' },
+        { name: 'Scope & Priorities', description: 'What\'s in scope vs. out of scope? What are the highest priorities for this design phase?' },
+        { name: 'Open Questions', description: 'What questions remain unanswered? What needs further research or client input?' },
+    ],
+    'Client - Mid way meeting': [
+        { name: 'Progress Updates', description: 'What progress has been made since the last meeting? What milestones have been reached?' },
+        { name: 'Design Feedback', description: 'What feedback did the client give on current designs, prototypes, or concepts?' },
+        { name: 'Issues & Blockers', description: 'What problems or blockers were identified? What\'s preventing progress?' },
+        { name: 'Scope Changes', description: 'Were any changes to scope, direction, or requirements discussed?' },
+        { name: 'Next Steps', description: 'What are the agreed next steps, deadlines, or deliverables before the next meeting?' },
+    ],
+    'Client - Handover meeting': [
+        { name: 'Deliverables Reviewed', description: 'What deliverables were presented and reviewed? What was the client shown?' },
+        { name: 'Client Feedback', description: 'What was the client\'s reaction? What feedback did they give on the final output?' },
+        { name: 'Outstanding Items', description: 'What items are still outstanding or incomplete? What needs follow-up?' },
+        { name: 'Training & Support Needs', description: 'What training, documentation, or ongoing support does the client need?' },
+        { name: 'Sign-off & Acceptance', description: 'Was sign-off given? What acceptance criteria were discussed?' },
+    ],
+    'Internal - Team meeting': [
+        { name: 'Updates & Progress', description: 'What updates did team members share? What progress was reported on current projects?' },
+        { name: 'Decisions Made', description: 'What decisions were made during the meeting? What was agreed upon?' },
+        { name: 'Action Items', description: 'What tasks were assigned? Who is responsible and by when?' },
+        { name: 'Blockers & Risks', description: 'What blockers, risks, or concerns were raised by the team?' },
+        { name: 'Team Feedback', description: 'What general feedback, ideas, or suggestions did team members share?' },
+    ],
+    'Internal - Project review': [
+        { name: 'Project Status', description: 'What is the current status of the project? Is it on track, behind, or ahead?' },
+        { name: 'What Went Well', description: 'What aspects of the project went well? What successes were highlighted?' },
+        { name: 'What Could Improve', description: 'What could be improved? What lessons were learned?' },
+        { name: 'Resource & Timeline', description: 'Were any resource, budget, or timeline issues discussed?' },
+        { name: 'Recommendations', description: 'What recommendations or next steps were proposed for the project?' },
+    ],
+    'Internal - Other': [
+        { name: 'Key Discussion Points', description: 'What were the main topics discussed in the meeting?' },
+        { name: 'Decisions Made', description: 'What decisions were made during the meeting?' },
+        { name: 'Action Items', description: 'What tasks or actions were assigned? Who is responsible?' },
+        { name: 'Open Questions', description: 'What questions remain unanswered or need further discussion?' },
+        { name: 'Follow-ups', description: 'What follow-up meetings, emails, or tasks were agreed?' },
+    ],
+};
+
+// Default fallback categories (same as Initial assessment)
+const DEFAULT_CATEGORIES = INSIGHT_CATEGORIES['Client - Initial assessment'];
+
+// Build the categories section of the prompt from the meeting type
+const getCategoriesForType = (meetingType) => {
+    return INSIGHT_CATEGORIES[meetingType] || DEFAULT_CATEGORIES;
+};
+
+const formatCategoriesForPrompt = (categories) => {
+    return categories.map((cat, i) => `${i + 1}. **${cat.name}** — ${cat.description}`).join('\n');
+};
+
+const getCategoryNames = (categories) => {
+    return categories.map(cat => cat.name).join(', ');
+};
+
 // Extract key insights / trigger questions from the transcript
 // For very long transcripts, extract insights from each chunk then merge
 app.post('/api/insights', requireAuth, async (req, res) => {
@@ -197,16 +266,16 @@ app.post('/api/insights', requireAuth, async (req, res) => {
 
         if (!transcriptionText) return res.json({ insights: '' });
 
+        const categories = getCategoriesForType(meetingType);
+        const categoriesText = formatCategoriesForPrompt(categories);
+        const categoryNames = getCategoryNames(categories);
+
         const insightsPrompt = (text, context = '') => `You are a meeting analyst specialising in product design and innovation. Analyse the following meeting transcript${context} and extract key insights, organised into the categories below.
 
 For each category, identify the specific question or prompt that triggered the discussion, then summarise the key points made in response. Quote important phrases directly from the transcript where possible.
 
 Categories:
-1. **User Needs** — How would users use the product? What do they need it to do? What problems are they trying to solve?
-2. **Feature Requests** — What are the key features discussed? What functionality is most important? What should the product include?
-3. **Competitor Analysis** — What products are currently on the market? What alternatives exist? What do competitors offer?
-4. **Pros & Cons** — What works well about existing solutions? What doesn't? Advantages and disadvantages discussed.
-5. **Pain Points** — What frustrates users? What's missing? Where do current solutions fall short?
+${categoriesText}
 
 Rules:
 - Only include categories where relevant discussion was found. Skip empty categories entirely.
@@ -251,7 +320,7 @@ ${text}`;
         // Merge all chunk insights into a deduplicated final set
         const mergeResponse = await ai.models.generateContent({
             model: 'gemini-2.0-flash',
-            contents: `Below are key insights extracted from different sections of the same meeting. Merge them into one comprehensive set of insights, removing duplicates and combining related points. Keep the same 5 categories (User Needs, Feature Requests, Competitor Analysis, Pros & Cons, Pain Points). Only include categories with content. Write in UK English.\n\n${chunkInsights.join('\n\n---\n\n')}`
+            contents: `Below are key insights extracted from different sections of the same meeting. Merge them into one comprehensive set of insights, removing duplicates and combining related points. Keep the same categories (${categoryNames}). Only include categories with content. Write in UK English.\n\n${chunkInsights.join('\n\n---\n\n')}`
         });
 
         res.json({ insights: mergeResponse.text || '' });
