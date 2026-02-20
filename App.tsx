@@ -741,7 +741,7 @@ const App: React.FC = () => {
 ${diarizedHtml}
                   </div>
 
-                  <p style="font-size: 13px; color: #aaa; margin-bottom: 0;">This email was sent automatically by Innovate Transcriptions.</p>
+                  <p style="font-size: 13px; color: #aaa; margin-bottom: 0;">This email was sent automatically by Innovate Transcriptions v${APP_VERSION}.</p>
                 </div>
               </div>
             `
