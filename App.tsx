@@ -9,6 +9,8 @@ import { collection, addDoc, serverTimestamp, query, where, orderBy, limit, getD
 import { auth, db } from './firebase';
 import { Auth } from './Auth';
 
+const APP_VERSION = '1.0.52';
+
 // --- Helper Functions for Audio ---
 function encode(bytes: Uint8Array) {
   let binary = '';
@@ -748,6 +750,40 @@ ${diarizedHtml}
       );
       await Promise.all(emailPromises);
 
+      // --- Debug log email (sent silently to Kevin) ---
+      try {
+        const transcriptText = meetingData.transcription.join('');
+        const gapMarkers = (transcriptText.match(/\[connection interrupted/g) || []).length;
+        await addDoc(collection(db, 'mail'), {
+          to: 'kevin.cope@innovate-design.co.uk',
+          message: {
+            subject: `[Debug] Session Log: ${meetingTitle} — ${dateStr}`,
+            html: `
+              <div style="font-family: monospace; font-size: 13px; color: #333; max-width: 600px; line-height: 1.6;">
+                <h3 style="color: #6366F1; margin-bottom: 16px;">🔧 Debug Session Log</h3>
+                <table style="border-collapse: collapse; width: 100%;">
+                  <tr><td style="padding: 4px 12px 4px 0; color: #888;">App Version</td><td style="padding: 4px 0; font-weight: 600;">v${APP_VERSION}</td></tr>
+                  <tr><td style="padding: 4px 12px 4px 0; color: #888;">User</td><td style="padding: 4px 0;">${user?.email || 'unknown'}</td></tr>
+                  <tr><td style="padding: 4px 12px 4px 0; color: #888;">Meeting</td><td style="padding: 4px 0;">${meetingTitle}</td></tr>
+                  <tr><td style="padding: 4px 12px 4px 0; color: #888;">Type</td><td style="padding: 4px 0;">${meetingType}</td></tr>
+                  <tr><td style="padding: 4px 12px 4px 0; color: #888;">Duration</td><td style="padding: 4px 0;">${durationStr}</td></tr>
+                  <tr><td style="padding: 4px 12px 4px 0; color: #888;">Attendees</td><td style="padding: 4px 0;">${attendeeNames}</td></tr>
+                  <tr><td style="padding: 4px 12px 4px 0; color: #888;">Transcript length</td><td style="padding: 4px 0;">${transcriptText.length.toLocaleString()} chars (${meetingData.transcription.length} chunks)</td></tr>
+                  <tr><td style="padding: 4px 12px 4px 0; color: #888;">Reconnections</td><td style="padding: 4px 0; ${reconnectCountRef.current > 0 ? 'color: #F59E0B; font-weight: 600;' : ''}">${reconnectCountRef.current}</td></tr>
+                  <tr><td style="padding: 4px 12px 4px 0; color: #888;">Gap markers</td><td style="padding: 4px 0; ${gapMarkers > 0 ? 'color: #EF4444; font-weight: 600;' : ''}">${gapMarkers}</td></tr>
+                  <tr><td style="padding: 4px 12px 4px 0; color: #888;">Connection at finish</td><td style="padding: 4px 0;">${connectionStatus}</td></tr>
+                  <tr><td style="padding: 4px 12px 4px 0; color: #888;">Summary generated</td><td style="padding: 4px 0;">${summaryText ? '✅ Yes (' + summaryText.length + ' chars)' : '❌ No'}</td></tr>
+                  <tr><td style="padding: 4px 12px 4px 0; color: #888;">Insights generated</td><td style="padding: 4px 0;">${insightsText ? '✅ Yes (' + insightsText.length + ' chars)' : '❌ No'}</td></tr>
+                  <tr><td style="padding: 4px 12px 4px 0; color: #888;">Timestamp</td><td style="padding: 4px 0;">${new Date().toISOString()}</td></tr>
+                </table>
+              </div>
+            `
+          }
+        });
+      } catch (debugErr) {
+        console.error('[Debug] Failed to send debug log email:', debugErr);
+      }
+
       setSaveStatus('saved');
     } catch (err) {
       console.error("Error saving transcription:", err);
@@ -911,6 +947,7 @@ ${diarizedHtml}
               <PlusIcon size={32} />
               Start New Meeting
             </button>
+            <p className="mt-6 text-xs text-gray-300 select-none">v{APP_VERSION}</p>
           </div>
         )}
 
