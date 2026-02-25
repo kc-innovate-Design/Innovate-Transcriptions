@@ -9,7 +9,7 @@ import { collection, addDoc, serverTimestamp, query, where, orderBy, limit, getD
 import { auth, db } from './firebase';
 import { Auth } from './Auth';
 
-const APP_VERSION = '1.0.52';
+const APP_VERSION = '1.0.53';
 
 // --- Helper Functions for Audio ---
 function encode(bytes: Uint8Array) {
