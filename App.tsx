@@ -201,6 +201,7 @@ const App: React.FC = () => {
   const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const reconnectCountRef = useRef(0);
   const totalChunksSentRef = useRef(0);
+  const lastSpeechTimeRef = useRef<number>(0);
 
   useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
   useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
@@ -385,7 +386,7 @@ const App: React.FC = () => {
         responseModalities: [Modality.AUDIO],
         inputAudioTranscription: {},
         outputAudioTranscription: {},
-        systemInstruction: 'You are a professional meeting transcriber. Transcribe the conversation accurately in UK English. Do not add summaries, only transcription.',
+        systemInstruction: 'You are a professional meeting transcriber. Transcribe the conversation accurately in UK English. Do not add summaries, only transcription. If you hear silence, background noise, or non-speech sounds, do not output anything. If you are unsure, do not hallucinate.',
         contextWindowCompression: {
           triggerTokens: '100000',
           slidingWindow: { targetTokens: '50000' },
@@ -409,17 +410,37 @@ const App: React.FC = () => {
             scriptProcessor.onaudioprocess = (e) => {
               if (isRecordingRef.current && !isPausedRef.current) {
                 const inputData = e.inputBuffer.getChannelData(0);
-                const pcmBlob = createBlob(inputData);
-                totalChunksSentRef.current++;
-                if (totalChunksSentRef.current % 100 === 1) {
-                  console.log(`[Recording] Audio chunk #${totalChunksSentRef.current}`);
+
+                // --- VAD (Voice Activity Detection) Logic ---
+                // Calculate RMS energy to detect speech vs silence
+                let sum = 0;
+                for (let i = 0; i < inputData.length; i++) {
+                  sum += inputData[i] * inputData[i];
                 }
-                sessionRef.current?.sendRealtimeInput({
-                  audio: {
-                    data: pcmBlob.data,
-                    mimeType: pcmBlob.mimeType
+                const rms = Math.sqrt(sum / inputData.length);
+                const VAD_THRESHOLD = 0.004;
+
+                if (rms > VAD_THRESHOLD) {
+                  lastSpeechTimeRef.current = Date.now();
+                }
+
+                // Keep stream active for 1s after speech ends to avoid clipping
+                const now = Date.now();
+                const isInHangover = (now - lastSpeechTimeRef.current) < 1000;
+
+                if (rms > VAD_THRESHOLD || isInHangover) {
+                  const pcmBlob = createBlob(inputData);
+                  totalChunksSentRef.current++;
+                  if (totalChunksSentRef.current % 100 === 1) {
+                    console.log(`[Recording] Audio chunk #${totalChunksSentRef.current} (RMS: ${rms.toFixed(5)})`);
                   }
-                });
+                  sessionRef.current?.sendRealtimeInput({
+                    audio: {
+                      data: pcmBlob.data,
+                      mimeType: pcmBlob.mimeType
+                    }
+                  });
+                }
               }
             };
 
@@ -448,6 +469,20 @@ const App: React.FC = () => {
           if (message.serverContent?.inputTranscription) {
             const text = message.serverContent.inputTranscription.text;
             if (text.trim()) {
+              // --- Hallucination Filter ---
+              // Discard repetitive gibberish patterns common in Gemini Live during silence:
+              // 1. Repeating characters/sequences (e.g. "н-н-н-н", "нельнельнель")
+              // 2. High density of Cyrillic or non-English characters
+              // 3. Excessively long strings without spaces
+              const isCyrillic = /[\u0400-\u04FF]/.test(text);
+              const isRepetitive = /(.)\1{7,}/.test(text) || /(...)\1{3,}/.test(text);
+              const isStrange = text.length > 5 && !text.includes(' ') && !/^[a-zA-Z0-9]+$/.test(text);
+
+              if (isCyrillic || isRepetitive || isStrange) {
+                console.warn("[Recording] Filtered hallucination:", text);
+                return;
+              }
+
               console.log("[Recording] Transcription:", text.substring(0, 100));
               // Buffer chunks instead of updating state on every message
               transcriptBufferRef.current.push(text);
